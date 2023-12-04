@@ -9,11 +9,24 @@ const testedVal : Address_t
 val others = validators.exclude(Set(testedVal)) 
 val othersList = others.fold(List(), (s, x) => s.append(x))
 
+/*
+- there is a special validator testedVal and all the others
+- the others include the proposer.
+- the others are successful until sending precommit value, while testedVal doesn't do anything
+- testedVal 
+    - hits TimeoutPropose 
+    - then receives prevote from others to hitTimeoutPrevote to enter step precommit
+    - the receives the proposal
+    - then it should update valid value but not locked value 
+*/
+
 run runToLine42 = {
     val value = "blue"
     init
     .then(valStep(testedVal))
+    // proposer sends proposal and correct processes receive -> send prevote value
     .then(everyoneReceivesProposal(othersList, validatorList, validatorSet, 0, 0, value))
+    // Everyone except the tested validators sends precommit
     .then(fromPrevoteToPrecommit(othersList, othersList, validatorList, validatorSet, 0, 0, value))
     // At this point we have set up the environment for "testedVal" to reach line 42 without
     // any other process taking any steps
