@@ -12,7 +12,7 @@ val others = otherSet.fold(List(), (s, x) => s.append(x))
 /*
 - there is a correct validator "testedVal" that we want to observe
 - there need to be faulty processes
-- there are other processes that together with the faulty ones are 2f+1
+- there are *other* processes that together with the faulty ones are 2f+1
 - the others include the proposer.
 - the faulty processes help the others to decide in round 0
 - testedVal goes to round 1 upon timeoutPrecommit
@@ -23,7 +23,7 @@ run runToDecision = {
     val nextProposer = Proposer (validatorSet, 0, 1)
     init
     .then(valStep(testedVal))
-// proposer sends proposal and other processes receive -> send prevote value
+// proposer sends proposal and other processes receive it -> send prevote value
     .then(all {
         // others should be at most 2/3.
         // if this assertion fails the set need to be set differently
@@ -47,7 +47,6 @@ run runToDecision = {
     .then(others.concat(faultyList).length().reps(_ => ListTakeAStep(others.concat(List(testedVal)))))
 
 // at this point others have decided and testedVal is ready to go into next round.
-
     .then(valStep(testedVal))
 
 // TODO: at this point we are stuck. Let's discuss
