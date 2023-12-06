@@ -32,7 +32,7 @@ run runToDecision = {
         everyoneReceivesProposal(others, validatorList, validatorSet, 0, 0, "blue")
     })
 
-// Others receive the prevots of others and the faulty ones -> send precommit value
+// Others receive the prevotes of others and the faulty ones -> send precommit value
     .then(ListDeliverAllVotes ("Prevote", others.concat(faultyList), others, validatorSet, 0, 0, "blue"))
     .then(others.concat(faultyList).length().reps(_ => ListTakeAStep(others)))
     .then(ListTakeAStep(others))
