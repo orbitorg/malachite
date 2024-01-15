@@ -23,6 +23,10 @@ run ListDeliverProposal (active, propMsg) = {
     active.length().reps(i => deliverProposal(active[i], propMsg))
 }
 
+run ListDeliverVote (active, voteMsg) = {
+    active.length().reps(i => deliverVote(active[i], voteMsg))
+}
+
 run ListDeliverSomeProposal (active) = {
     active.length().reps(i => deliverSomeProposal(active[i]))
 }
