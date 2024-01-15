@@ -108,7 +108,7 @@ action valStep(v: Address) : bool = {
                 // send a proposal?
                 propBuffer' = sendProposal(propBuffer, proposal), 
                 voteBuffer' = voteBuffer,
-                system' = sys,
+                system' = startTimeout(sys, v, ProposeTimeout),
             }
             | VoteOutput(vote) => all {
                 propBuffer' = propBuffer,
