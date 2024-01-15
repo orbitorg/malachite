@@ -44,7 +44,9 @@ run runToLine32invalid =
 
 
 run runToLine32locked = 
-    // we need proposer of round 1 to not lock, and someone to lock.
+    // we need proposer of round 2 is the only one to lock in round 0 (thirdProposer)
+    // other correct processes lock a different value in round 1
+    // in round 2 the proposer proposes its locked value, but the other correct processes prevote nil now
     val nextProposer = proposer(validatorSet, 0, 1)
     val thirdProposer = proposer(validatorSet, 0, 2)
     nondet value = oneOf(Values)
@@ -53,11 +55,12 @@ run runToLine32locked =
     .then(all {
         everyoneReceivesProposal(correctList, validatorList, validatorSet, 0, 0, value)
     })
-    // third receive all prevotes    
+    // thirdProposer receives all prevotes    
     .then(ProcessDeliverAllVotes(Prevote, thirdProposer, correctList, validatorSet, 0, 0, Val(value)))
     .then(correctList.length().reps(_ => valStep(thirdProposer)))
     .then(2.reps(_ => valStep(thirdProposer)))
     // now third proposer as locked and consumed step change
+    // we now send a message from the faulty process (slowByz) to the other correct ones to send then through timeouts
     .then(ListDeliverVote(correctList.select(x => x != thirdProposer), mkVote(Prevote, slowByz, 0, 0, Nil)))
     .then(ListTakeAStep(correctList.select(x => x != thirdProposer)))
     .then(ListDeliverAllVotes(Prevote, correctList.select(x => x != thirdProposer), correctList.select(x => x != thirdProposer), validatorSet, 0, 0, Val(value)))
@@ -80,8 +83,8 @@ run runToLine32locked =
     .then(ListDeliverAllVotes(Precommit, correctList.select(x => x != thirdProposer), correctList, validatorSet, 0, 1, Val(nextValue)))
     .then(correctList.length().reps(_ => ListTakeAStep(correctList)))    
     // here all correct have precommit timeout started
-    // thirdproposer has locked value
-    // other correct processes have locked nextValue
+    // thirdproposer is locked on value "value" from round 0
+    // other correct processes have locked "nextValue" in round 1
     // now we deliver the prevote from thirdProposer so that others have Polka for round 0
     .then(ListDeliverVote(correctList.select(x => x != thirdProposer), mkVote(Prevote, thirdProposer, 0, 0, Val(value))))
     .then(ListTakeAStep(correctList.select(x => x != thirdProposer)))
