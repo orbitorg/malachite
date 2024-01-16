@@ -31,10 +31,6 @@ run ListDeliverVote (active, voteMsg) = {
     active.length().reps(i => deliverVote(active[i], voteMsg))
 }
 
-run ListDeliverVote (active, voteMsg) = {
-    active.length().reps(i => deliverVote(active[i], voteMsg))
-}
-
 run ListDeliverSomeProposal (active) = {
     all{
         assert( Faulty != Set() or 
