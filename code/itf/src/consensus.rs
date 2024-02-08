@@ -7,14 +7,13 @@ use crate::types::{Address, Height, NonNilValue, Proposal, Round, Step, Timeout,
 #[derive(Clone, Debug, Deserialize)]
 pub struct State {
     pub state: ConsensusState,
-    pub input: Input,
-    pub output: Output,
+    pub input: ConsensusInput,
+    pub output: ConsensusOutput,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename = "ConsensusInput")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(tag = "tag", content = "value")]
-pub enum Input {
+pub enum ConsensusInput {
     #[serde(rename = "NoConsensusInput")]
     NoInput,
 
@@ -77,9 +76,8 @@ pub enum Input {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(rename = "ConsensusOutput")]
 #[serde(tag = "tag", content = "value")]
-pub enum Output {
+pub enum ConsensusOutput {
     #[serde(rename = "NoConsensusOutput")]
     NoOutput,
 
@@ -108,7 +106,7 @@ pub enum Output {
     Error(String),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsensusState {
     #[serde(rename = "p")]

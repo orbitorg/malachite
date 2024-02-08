@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use pretty_assertions::assert_eq;
 
 use malachite_common::{Context, NilOrVal, Round};
-use malachite_itf::consensus::{Input as ModelInput, Output as ModelOutput, State};
+use malachite_itf::consensus::{
+    ConsensusInput as ModelInput, ConsensusOutput as ModelOutput, State,
+};
 use malachite_itf::types::Step;
 use malachite_round::input::Input;
 use malachite_round::output::Output;

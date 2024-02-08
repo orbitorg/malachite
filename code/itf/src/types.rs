@@ -24,7 +24,7 @@ impl Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Proposal {
     pub src_address: Address,
@@ -37,7 +37,7 @@ pub struct Proposal {
     pub valid_round: Round,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(tag = "tag", content = "value")]
 pub enum VoteType {
     Prevote,
@@ -53,7 +53,7 @@ impl VoteType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Vote {
     pub vote_type: VoteType,
@@ -95,7 +95,7 @@ impl Step {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Deserialize)]
 #[serde(tag = "tag", content = "value")]
 pub enum Timeout {
     #[serde(rename = "ProposeTimeout")]

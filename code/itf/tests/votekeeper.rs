@@ -7,14 +7,12 @@ use glob::glob;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 
-use malachite_itf::utils::generate_traces;
+use malachite_itf::utils::{generate_traces, get_seed, TraceOptions};
 use malachite_itf::votekeeper::State;
 use malachite_test::{Address, PrivateKey};
 
 use runner::VoteKeeperRunner;
 use utils::ADDRESSES;
-
-const RANDOM_SEED: u64 = 0x42;
 
 #[test]
 fn test_itf() {
@@ -26,21 +24,15 @@ fn test_itf() {
         std::mem::forget(temp_dir);
     }
 
-    let quint_seed = option_env!("QUINT_SEED")
-        // use inspect when stabilized
-        .map(|x| {
-            println!("using QUINT_SEED={}", x);
-            x
-        })
-        .or(Some("118"))
-        .and_then(|x| x.parse::<u64>().ok())
-        .filter(|&x| x != 0)
-        .expect("invalid random seed for quint");
+    let seed = get_seed();
 
     generate_traces(
         "tests/votekeeper/votekeeperTest.qnt",
         &temp_path.to_string_lossy(),
-        quint_seed,
+        TraceOptions {
+            seed,
+            ..Default::default()
+        },
     );
 
     for json_fixture in glob(&format!("{}/*.itf.json", temp_path.display()))
@@ -52,7 +44,7 @@ fn test_itf() {
         let json = std::fs::read_to_string(&json_fixture).unwrap();
         let trace = itf::trace_from_str::<State>(&json).unwrap();
 
-        let mut rng = StdRng::seed_from_u64(RANDOM_SEED);
+        let mut rng = StdRng::seed_from_u64(seed);
 
         // build mapping from model addresses to real addresses
         let vote_keeper_runner = VoteKeeperRunner {

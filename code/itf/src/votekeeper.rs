@@ -34,11 +34,11 @@ pub enum VoteKeeperOutput {
     #[serde(with = "As::<(Integer, Same)>")]
     PolkaValue(Round, NonNilValue),
 
-    #[serde(rename = "PrevoteAnyVKOutput")]
+    #[serde(rename = "PrecommitAnyVKOutput")]
     #[serde(with = "As::<Integer>")]
     PrecommitAny(Round),
 
-    #[serde(rename = "PrevoteNilVKOutput")]
+    #[serde(rename = "PrecommitValueVKOutput")]
     #[serde(with = "As::<(Integer, Same)>")]
     PrecommitValue(Round, NonNilValue),
 
@@ -48,8 +48,8 @@ pub enum VoteKeeperOutput {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Bookkeeper {
+#[serde(rename = "Bookkeeper", rename_all = "camelCase")]
+pub struct VoteKeeper {
     #[serde(with = "As::<Integer>")]
     pub height: Height,
     #[serde(with = "As::<Integer>")]
@@ -85,7 +85,7 @@ pub struct VoteCount {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct State {
-    pub bookkeeper: Bookkeeper,
+    pub bookkeeper: VoteKeeper,
     pub last_emitted: VoteKeeperOutput,
     pub weighted_vote: WeightedVote,
 }
