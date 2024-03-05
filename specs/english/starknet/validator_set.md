@@ -4,6 +4,9 @@ Principles:
 
 - The validator set used by Starknet does not change within an epoch.
 - The installation of a new, updated validator set is delayed by two epochs.
+- Updates in Starnet validator set are produced by Ethereum transactions and contracts
+- Validators must acknowledge to Ethereum the inclusion of validator set
+  updates in committed blocks
 
 ## Epochs
 
@@ -95,3 +98,55 @@ we update the current and next validator sets as follows:
 
 At the end, this algorithm is very similar to the one adopted in CometBFT,
 if we replace heights by epochs.
+
+## Interaction with L1
+
+Up to here, the specification considers the protocol for configuring and
+updating the validator set in Starknet, a Tendermint-based blockchain.
+This is the second layer (L2) of the protocol.
+The first layer (L1) of the protocol is implemented by contracts in the
+Ethereum blockchain.
+This section overviews the interaction between L1 and L2.
+
+### Accounts and Staking
+
+Starknet contracts on Ethereum manage Starknet accounts and balances in
+the Starknet token STRK.
+In order to become a Starknet validator, a node have to transfer tokens from
+its account to the Starknet staking contract.
+The amount deposited by a validator in Ethereum (L1) defines its voting power
+in the Starknet blockchain (L2).
+
+### Updates
+
+Updates in the validator set adopted by Starknet (L2) are produced by contracts
+in the Ethereum blockchain (L1).
+Transactions that deposit or withdraw funds to or from the staking contract
+are reflected in validator set updates to be applied in Starknet,
+intended to add, remove, or update the voting power of validators.
+
+Starknet validators are supposed to monitor the Ethereum contract for
+transactions that update the validator set.
+Once a validator becomes the proposer of a height of consensus,
+it includes in the proposed block all outstanding (i.e., not yet included in
+previous blocks) validator set updates retrieved from the Ethereum contract.
+
+> Not sure if transactions committed to Ethereum are included as is in Starknet
+> blocks, or if Starknet validator updates are derived from the Ethereum
+> transaction. This should not have impact on this specification.
+
+The set `updates(H)` introduced in the previous [Updates section](#updates) is
+formed by the above defined transactions.
+
+### Acknowledgments
+
+The Ethereum contracts expect to receive from Starknet validators proofs for
+every committed block.
+The proofs of Starknet blocks including validator set updates play the role of
+acknowledging their reception and application.
+
+So when a validator set update transaction `u` is committed to Ethereum, `u` is
+added to a list of pending updates in the associated Ethereum contract.
+Once a proof of a Starknet block `H` containing `u` is received and validated,
+the Ethereum contract that has produced `u` marks the validator set update `u`
+as completed.
