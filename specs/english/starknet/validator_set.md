@@ -8,6 +8,9 @@ Principles:
 - Validators must acknowledge to Ethereum the inclusion of validator set
   updates in committed blocks
 
+The Starkware team has produced a document describing their specification and
+requirements on [Google docs][starkware-spec].
+
 ## Epochs
 
 The heights of the blockchain are divided into sub-sequences with a predefined
@@ -21,6 +24,13 @@ in blocks or heights, of any epoch:
 
 > Example: if `E = 3`, heights `0, 1, 2` belong to epoch `0`,
 > heights `3, 4, 5` belong to epoch `1`, etc.
+
+In the [Starkware spec][starkware-spec] a different nomenclature is adopted:
+
+- Epoch `e` is represented by "Starknet Validator Epochs" or _SVE_;
+- The length of an epoch `E` is represented by _N_, the number of blocks in a _SVE_.
+
+### Use of Epochs
 
 In the context of validator sets and validator set updates, epochs are relevant
 for two reasons:
@@ -48,7 +58,7 @@ transactions included in the block, committed at height `H`.
 > be adopted in future heights, belonging to future epochs.
 
 We define `S(H)` as follows, where `H_0` denotes the first height of the
-current branch of the blockchain:
+blockchain:
 
 - `S(H_0)` is known a priori by all participants (e.g., from genesis);
 - For every height `H > H_0`, `S(H) = S(H-1) + updates(H)`.
@@ -60,6 +70,12 @@ where `apply` is a deterministic function.
 The validator set updates in `updates(H)` are applied to `S(H)` in the order in
 which they appear in block `H`.
 
+The first height of the blockchain `H_0` is typically `H_0 = 0` for new
+blockchains.
+Due to the possibility of [forks][forks-spec], we consider a fork as a new
+instance of the blockchain, which can start from an arbitrary height `H_0`.
+
+
 ## Validator Sets
 
 We denote by `V(e)` the validator set adopted in heights of an epoch `e`.
@@ -70,27 +86,33 @@ The validator set `V(e)` used in epoch `e` is the validator set computed two
 epochs before `e`, namely the value of the state variable `S` in the last
 height of epoch `e - 2`.
 In the case where epoch `e - 2` does not exist or it is not part of the 
-current branch of the blockchain, the initial state `S(H0)` is considered.
+current branch of the blockchain, the initial state `S(H_0)` is considered.
 More precisely:
 
-- `V(e) = S(max{H', H0})`, where height `H' = last(e - 2) = (e - 1) * E - 1`
+- `V(e) = S(max{H', H_0})`, where height `H' = last(e - 2) = (e - 1) * E - 1`
 
-The validator set of the first epoch in the current execution is always the
-"genesis" validator set `S(H0)`.
+The validator set of the first epoch present in a branch of the blockchain is
+the validator set `S(H_0)`, where `H_0` is the first height of that branch.
+This distinction is important, in terms of validator sets, because when there
+is a [fork][forks-spec] in the blockchain, the new branch starting from height
+`H_0` has is validator set _reset_ to `S(H_0)`.
+This means that `S(H_0)` is not computed in the usual way, i.e., derived from
+`S(H_0 - 1)`, but externally _enforced_.
 
-> Example: if `E = 3` and the current branch of the blockchain starts at height
-> `H0 = 3`, then the validator sets:
+> Example: if the current branch starts in height `H_0 = 3` and `E = 3`,
+> then the validator sets:
 >  - `V(3) = S(5)`, as `5` is the last height of epoch `e - 2 = 1`, formed by
 >    heights `3, 4, 5`.
->  - `V(2) = S(3)`, the "genesis" state `S(H0)`, as `2 < H0` is the last height
->    of epoch `0`.
->  - `V(1) = S(3)`, the "genesis" state `S(H0)`, as epoch `e - 2 = -1` does not exist.
+>  - `V(2) = S(3)`, the initial validator set `S(H_0)` of the branch,
+>    as `last(e - 2) = 2 < H_0 = 3`.
+>  - `V(1) = S(3)`, the initial validator set `S(H_0)` of the branch,
+>    as epoch `e - 2 = -1` does not exist.
 
-It is possible to simplify the algorithm to compute the validator set for an
-epoch if we introduce an intermediate variable `nextV(e)`, which stores
-validator set for epoch `e + 1`.
-At the beginning of a new epoch `e`, that is, in height `H = first(e) = e * E`,
-we update the current and next validator sets as follows:
+It is possible to simplify the algorithm to compute the validator set for a
+regular epoch, i.e., that is not the first one of a branch, if we introduce an
+intermediate variable `nextV(e)`, which stores validator set for epoch `e + 1`.
+At the beginning of a new epoch `e`, in height `H = first(e) = e * E`,
+we update the state variables as follows:
 
 - `V(e) = nextV(e - 1)`, i.e., the current validator set is the previous next
   validator set.
@@ -99,6 +121,12 @@ we update the current and next validator sets as follows:
 
 At the end, this algorithm is very similar to the one adopted in CometBFT,
 if we replace heights by epochs.
+
+In the [Starkware spec][starkware-spec] a different nomenclature is adopted:
+
+- `V(e)`, the current validator set, is referred to as _V_;
+- `nextV(e)` is referred to in the text as _Staged Updates_;
+- `S(H)`, where `e(H) = e` is reflected to in the text as _Pending Updates_.
 
 ## Interaction with L1
 
@@ -151,3 +179,6 @@ added to a list of pending updates in the associated Ethereum contract.
 Once a proof of a Starknet block `H` containing `u` is received and validated,
 the Ethereum contract that has produced `u` marks the validator set update `u`
 as completed.
+
+[starkware-spec]: https://docs.google.com/document/d/1OaYLh9o10DIsGpW0GTRhWl-IJiVyjRsy7UttHs9_1Fw
+[forks-spec]: ./forks-TODO.md
