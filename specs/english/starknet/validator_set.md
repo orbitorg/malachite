@@ -16,7 +16,8 @@ We use `e` to identify and epoch, and the constant `E` to represent the length,
 in blocks or heights, of any epoch:
 
 - Each height `H` belongs to an epoch `e(H) = H / E`;
-- And the first height of an epoch `e` is `first(e) = e * E`.
+- The first height of an epoch `e` is `first(e) = e * E`;
+- The last height of an epoch `e` is `last(e) = (e + 1) * E - 1`.
 
 > Example: if `E = 3`, heights `0, 1, 2` belong to epoch `0`,
 > heights `3, 4, 5` belong to epoch `1`, etc.
