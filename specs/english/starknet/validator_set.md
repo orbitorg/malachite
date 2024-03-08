@@ -1,4 +1,4 @@
-# Validator Set Updates
+# Validator Set Updates Protocol
 
 Principles:
 
@@ -253,4 +253,4 @@ Since L1 is the "source of truth", these blocks and blocks proof become
 useless, as they will not be accepted by L1.
 
 [starkware-spec]: https://docs.google.com/document/d/1OaYLh9o10DIsGpW0GTRhWl-IJiVyjRsy7UttHs9_1Fw
-[forks-spec]: ./forks-TODO.md
+[forks-spec]: ./forks.md
