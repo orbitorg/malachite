@@ -4,7 +4,7 @@ Principles:
 
 - The validator set used by Starknet does not change within an epoch.
 - The installation of a new, updated validator set is delayed by two epochs.
-- Updates in Starnet validator set are produced by Ethereum transactions and contracts
+- Updates in Starknet validator set are produced by Ethereum transactions and contracts
 - Validators must acknowledge to Ethereum the inclusion of validator set
   updates in committed blocks
 
