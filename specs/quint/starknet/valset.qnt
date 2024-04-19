@@ -52,13 +52,8 @@ module valset {
 	// nextValidatorSet attemtps to extend the previous validator set with
 	// a set of registrations
 	pure def nextValidatorSet(previous: ValidatorSet, registrations: Set[Registration]) : ValidatorSet = {
-		// TODO: orderedPrefixFrom should start from first + 1,
-		val extendedRegistrations = orderedPrefixFrom(previous + 1, registrations)
-		// TODO: use a max helper
-		if (extendedRegistrations != Set())
-			max(extendedRegistrations)
-		else
-			previous
+		val extendedRegistrations = orderedPrefixFrom(previous, registrations)
+		maxInt(max(extendedRegistrations), previous)
 	}
 
 	// newL2Block produces a new block form the previous block and new registrations
@@ -71,7 +66,7 @@ module valset {
 				previous.valset
 		val staged =
 			if (height == epochStart(epoch(height))) // new epoch
-				orderedPrefixFrom(valset + 1, previous.unstaged)
+				orderedPrefixFrom(valset, previous.unstaged)
 			else
 				previous.staged
 		val lastStaged = maxInt(max(staged), valset)
@@ -85,12 +80,6 @@ module valset {
 			valset: valset,
 		}
 	}
-
-	//
-	// HELPERS
-	//
-
-	def lastL2 = L2[length(L2) - 1]
 
 	//
 	// INVARIANTS
@@ -119,7 +108,7 @@ module valset {
 	// namely, they follow the validator set and are in order. Moreover,
 	// registrations already applied should not be still staged.
 	def orderedStagedInvariant =
-		orderedPrefixFrom(lastL2.valset + 1, lastL2.staged) == lastL2.staged
+		orderedPrefixFrom(lastL2.valset, lastL2.staged) == lastL2.staged
 
 	// unstagedNotStagedInvariant: unstaged registrations should not
 	// include staged or already applied registrations.
@@ -149,6 +138,8 @@ module valset {
 
 	var regs : Set[Registration]
 	var L2 : List[L2Block]
+
+	def lastL2 = L2[length(L2) - 1]
 
 	// bootstrap
 	action init = all {

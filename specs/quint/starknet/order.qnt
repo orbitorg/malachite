@@ -47,8 +47,8 @@ module order {
 	}
 
 	pure def orderedPrefixFrom(first: int, s: Set[int]) : Set[int] = {
-		if (first.in(s))
-			orderedPrefix(s.filter(x => x >= first))
+		if ((first + 1).in(s))
+			orderedPrefix(s.filter(x => x > first))
 		else
 			Set()
 	}
@@ -107,6 +107,36 @@ module order {
 		orderedPrefix(Set(3, 2, 4)) == Set(2, 3, 4),
 		orderedPrefix(Set(1, 2, 4)) == Set(1, 2),
 		orderedPrefix(Set(3, 1, 2)) == Set(1, 2, 3),
+	}
+
+	run orderedPrefixFromTest = all {
+		orderedPrefixFrom(0, Set()) == Set(),
+		orderedPrefixFrom(3, Set()) == Set(),
+		orderedPrefixFrom(0, Set(1)) == Set(1),
+		orderedPrefixFrom(1, Set(1)) == Set(),
+		orderedPrefixFrom(6, Set(7)) == Set(7),
+		orderedPrefixFrom(5, Set(7)) == Set(),
+		orderedPrefixFrom(7, Set(7)) == Set(),
+		orderedPrefixFrom(0, Set(1, 7)) == Set(1),
+		orderedPrefixFrom(0, Set(7, 1)) == Set(1),
+		orderedPrefixFrom(1, Set(1, 7)) == Set(),
+		orderedPrefixFrom(1, Set(7, 1)) == Set(),
+		orderedPrefixFrom(0, Set(7, 1, 2)) == Set(1, 2),
+		orderedPrefixFrom(1, Set(7, 1, 2)) == Set(2),
+		orderedPrefixFrom(0, Set(7, 1, 2, 4)) == Set(1, 2),
+		orderedPrefixFrom(1, Set(7, 1, 2, 4)) == Set(2),
+		orderedPrefixFrom(0, Set(3, 1, 2, 4)) == Set(1, 2, 3, 4),
+		orderedPrefixFrom(1, Set(3, 1, 2, 4)) == Set(2, 3, 4),
+		orderedPrefixFrom(2, Set(3, 1, 2, 4)) == Set(3, 4),
+		orderedPrefixFrom(3, Set(3, 1, 2, 4)) == Set(4),
+		orderedPrefixFrom(4, Set(3, 1, 2, 4)) == Set(),
+		orderedPrefixFrom(1, Set(3, 2, 4)) == Set(2, 3, 4),
+		orderedPrefixFrom(1, Set(1, 2, 4)) == Set(2),
+		orderedPrefixFrom(2, Set(1, 2, 4)) == Set(),
+		orderedPrefixFrom(0, Set(1, 2, 4)) == Set(1, 2),
+		orderedPrefixFrom(0, Set(3, 1, 2)) == Set(1, 2, 3),
+		orderedPrefixFrom(1, Set(3, 1, 2)) == Set(2, 3),
+		orderedPrefixFrom(2, Set(3, 1, 2)) == Set(3),
 	}
 
 }
