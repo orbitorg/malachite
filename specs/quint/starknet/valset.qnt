@@ -19,6 +19,7 @@ module valset {
 	type L2Block = {
 		height: int,
 		registrations: Set[Registration],
+		staged: Set[Registration],
 		unstaged: Set[Registration],
 		valset: ValidatorSet,
 	}
@@ -28,12 +29,18 @@ module valset {
 
 	// epoch to which a height belongs
 	pure def epoch(height: int) : int = {
-		height / L2epochLength
+		if (height > 0)
+			height / L2epochLength
+		else
+			0
 	}
 
 	// epochStart is the first height of an epoch
 	pure def epochStart(epoch: int) : int = {
-		epoch * L2epochLength
+		if (epoch > 0)
+			epoch * L2epochLength
+		else
+			0
 	}
 
 	// committedRegistrations returns all registration added to every block
@@ -58,15 +65,22 @@ module valset {
 	// newL2Block produces a new block form the previous block and new registrations
 	pure def newL2Block(previous: L2Block, registrations: Set[Registration]) : L2Block = {
 		val height = previous.height + 1
+		// TODO: clean-up staged and unstaged, that now are historic
 		val unstaged = previous.unstaged.union(registrations)
+		val staged =
+			if (height == epochStart(epoch(height))) // new epoch
+				previous.unstaged
+			else
+				previous.staged
 		val valset =
 			if (height == epochStart(epoch(height))) // new epoch
-				nextValidatorSet(previous.valset, previous.unstaged)
+				nextValidatorSet(previous.valset, previous.staged)
 			else
 				previous.valset
 		{
 			height: height,
 			registrations: registrations,
+			staged: staged,
 			unstaged: unstaged,
 			valset: valset,
 		}
@@ -99,10 +113,11 @@ module valset {
 		lastL2.unstaged == commRegs
 
 	// valsetInvariant: validator set for a block of epoch E is produced
-	// from all registrations committed up to the previous epoch E-1
+	// from all registrations committed up to the end of epoch E-2
 	def valsetInvariant =
 		val currentEpoch = epoch(lastL2.height)
-		val commRegs = committedRegistrations(L2.slice(0, epochStart(currentEpoch)))
+		val epochMinusTwoEnd = epochStart(currentEpoch - 1) - 1
+		val commRegs = committedRegistrations(L2.slice(0, epochMinusTwoEnd + 1))
 		lastL2.valset == nextValidatorSet(0, commRegs)
 
 	// invariants is an alias for all evaluated invariants
@@ -125,6 +140,7 @@ module valset {
 		L2' = List({
 			height: 0,
 			registrations: Set(),
+			staged: Set(),
 			unstaged: Set(),
 			valset: 0,
 		}),
