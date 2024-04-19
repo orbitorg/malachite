@@ -15,7 +15,8 @@ module valset {
 	// The last registration applied
 	type ValidatorSet = Registration
 
-	type Block = {
+	// TODO: introduce staged registrations
+	type L2Block = {
 		height: int,
 		registrations: Set[Registration],
 		unstaged: Set[Registration],
@@ -37,7 +38,7 @@ module valset {
 
 	// committedRegistrations returns all registration added to every block
 	// from the provided blockchain.
-	pure def committedRegistrations(blockchain: List[Block]) : Set[Registration] = {
+	pure def committedRegistrations(blockchain: List[L2Block]) : Set[Registration] = {
 		blockchain.foldl(Set(), (registrations, block) =>
 			registrations.union(block.registrations))
 	}
@@ -54,8 +55,8 @@ module valset {
 			previous
 	}
 
-	// newBlock produces a new block form the previous block and new registrations
-	pure def newBlock(previous: Block, registrations: Set[Registration]) : Block = {
+	// newL2Block produces a new block form the previous block and new registrations
+	pure def newL2Block(previous: L2Block, registrations: Set[Registration]) : L2Block = {
 		val height = previous.height + 1
 		val unstaged = previous.unstaged.union(registrations)
 		val valset =
@@ -116,7 +117,7 @@ module valset {
 	//
 
 	var regs : Set[Registration]
-	var L2 : List[Block]
+	var L2 : List[L2Block]
 
 	// bootstrap
 	action init = all {
@@ -138,17 +139,17 @@ module valset {
 	}
 
 	// add block
-	action addBlock = all {
+	action addL2Block = all {
 		// FIXME: limit the size of new registrations?
 		nondet registrations = regs.powerset().oneOf()
-		L2' = L2.append(newBlock(lastL2, registrations)),
+		L2' = L2.append(newL2Block(lastL2, registrations)),
 		regs' = regs,
 	}
 
 	// any state transition
 	action step = any {
 		addRegistration,
-		addBlock,
+		addL2Block,
 	}
 
 }
