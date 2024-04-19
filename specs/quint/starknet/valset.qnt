@@ -7,13 +7,19 @@
 
 module valset {
 
+	import order.* from "./order"
+
 	// Only the registration index is relevant
 	type Registration = int
+
+	// The last registration applied
+	type ValidatorSet = Registration
 
 	type Block = {
 		height: int,
 		registrations: Set[Registration],
 		unstaged: Set[Registration],
+		valset: ValidatorSet,
 	}
 
 	// committedRegistrations returns all registration added to every block
@@ -23,14 +29,28 @@ module valset {
 			registrations.union(block.registrations))
 	}
 
+	// nextValidatorSet attemtps to extend the previous validator set with
+	// a set of registrations
+	pure def nextValidatorSet(previous: ValidatorSet, registrations: Set[Registration]) : ValidatorSet = {
+		// TODO: orderedPrefixFrom should start from first + 1,
+		val extendedRegistrations = orderedPrefixFrom(previous + 1, registrations)
+		// TODO: use a max helper
+		if (extendedRegistrations != Set())
+			max(extendedRegistrations)
+		else
+			previous
+	}
+
 	// newBlock produces a new block form the previous block and new registrations
 	pure def newBlock(previous: Block, registrations: Set[Registration]) : Block = {
 		val height = previous.height + 1
 		val unstaged = previous.unstaged.union(registrations)
+		val valset = nextValidatorSet(previous.valset, previous.unstaged)
 		{
 			height: height,
 			registrations: registrations,
 			unstaged: unstaged,
+			valset: valset,
 		}
 	}
 
@@ -60,8 +80,18 @@ module valset {
 		val commRegs = committedRegistrations(L2)
 		lastL2.unstaged == commRegs
 
+	// valsetInvariant: validator set for a block is produced from all
+	// registrations committed up to the previous block
+	def valsetInvariant =
+		val commRegs = committedRegistrations(L2.slice(0, length(L2) - 1))
+		lastL2.valset == nextValidatorSet(0, commRegs)
+
 	// invariants is an alias for all evaluated invariants
-	def invariants = heightsInvariant and regsIntegrityInvariant and regsUnstagedInvariant
+	def invariants =
+		heightsInvariant and
+		regsIntegrityInvariant and
+		regsUnstagedInvariant and
+		valsetInvariant
 
 	//
 	// STATE MACHINE
@@ -77,6 +107,7 @@ module valset {
 			height: 0,
 			registrations: Set(),
 			unstaged: Set(),
+			valset: 0,
 		}),
 	}
 
