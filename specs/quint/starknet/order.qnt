@@ -5,6 +5,10 @@
 
 module order {
 
+	pure def maxInt(a, b) = {
+		if (a > b) a else b
+	}
+
 	pure def max(s: Set[int]) : int = {
 		s.fold(0, (s, x) => if (x > s) x else s)
 	}

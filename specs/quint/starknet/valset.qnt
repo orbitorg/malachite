@@ -64,8 +64,6 @@ module valset {
 	// newL2Block produces a new block form the previous block and new registrations
 	pure def newL2Block(previous: L2Block, registrations: Set[Registration]) : L2Block = {
 		val height = previous.height + 1
-		// TODO: clean-up unstaged, that now is historic
-		val unstaged = previous.unstaged.union(registrations)
 		val valset =
 			if (height == epochStart(epoch(height))) // new epoch
 				nextValidatorSet(previous.valset, previous.staged)
@@ -76,6 +74,9 @@ module valset {
 				orderedPrefixFrom(valset + 1, previous.unstaged)
 			else
 				previous.staged
+		val lastStaged = maxInt(max(staged), valset)
+		val unstaged = previous.unstaged.union(registrations).
+			filter(r => r > lastStaged)
 		{
 			height: height,
 			registrations: registrations,
@@ -106,11 +107,6 @@ module valset {
 		val commRegs = committedRegistrations(L2)
 		commRegs.filter(x => x <= 0) == Set() and commRegs.subseteq(regs)
 
-	// regsUnstagedInvariant: committed invariants become unstaged
-	def regsUnstagedInvariant =
-		val commRegs = committedRegistrations(L2)
-		lastL2.unstaged == commRegs
-
 	// valsetInvariant: validator set for a block of epoch E is produced
 	// from all registrations committed up to the end of epoch E-2
 	def valsetInvariant =
@@ -125,13 +121,27 @@ module valset {
 	def orderedStagedInvariant =
 		orderedPrefixFrom(lastL2.valset + 1, lastL2.staged) == lastL2.staged
 
+	// unstagedNotStagedInvariant: unstaged registrations should not
+	// include staged or already applied registrations.
+	def unstagedNotStagedInvariant =
+		val lastStaged = maxInt(max(lastL2.staged), lastL2.valset)
+		lastL2.unstaged.filter(r => r <= lastStaged) == Set()
+
+	// unstagedRegistrationsInvariant: all registrations added do L2 become
+	// unstaged registrations.
+	def unstagedRegistrationsInvariant =
+		val commRegs = committedRegistrations(L2)
+		val stagedRegs = L2.foldl(Set(), (s, b) => s.union(b.unstaged))
+		stagedRegs == commRegs
+
 	// invariants is an alias for all evaluated invariants
 	def invariants =
 		heightsInvariant and
 		regsIntegrityInvariant and
-		regsUnstagedInvariant and
 		valsetInvariant	and
-		orderedStagedInvariant
+		orderedStagedInvariant and
+		unstagedNotStagedInvariant and
+		unstagedRegistrationsInvariant
 
 	//
 	// STATE MACHINE
