@@ -49,7 +49,7 @@ module valset {
 			registrations.union(block.registrations))
 	}
 
-	// nextValidatorSet attemtps to extend the previous validator set with
+	// nextValidatorSet attempts to extend the previous validator set with
 	// a set of registrations
 	pure def nextValidatorSet(previous: ValidatorSet, registrations: Set[Registration]) : ValidatorSet = {
 		val extendedRegistrations = orderedPrefixFrom(previous, registrations)
@@ -96,19 +96,22 @@ module valset {
 		val commRegs = committedRegistrations(L2)
 		commRegs.filter(x => x <= 0) == Set() and commRegs.subseteq(regs)
 
-	// valsetInvariant: validator set for a block of epoch E is produced
-	// from all registrations committed up to the end of epoch E-2
-	def valsetInvariant =
-		val currentEpoch = epoch(lastL2.height)
-		val epochMinusTwoEnd = epochStart(currentEpoch - 1) - 1
-		val commRegs = committedRegistrations(L2.slice(0, epochMinusTwoEnd + 1))
-		lastL2.valset == nextValidatorSet(0, commRegs)
-
-	// orderedStagedInvariant: all staged registrations are applicable,
+	// stagedOrderedInvariant: all staged registrations are applicable,
 	// namely, they follow the validator set and are in order. Moreover,
 	// registrations already applied should not be still staged.
-	def orderedStagedInvariant =
+	def stagedOrderedInvariant =
 		orderedPrefixFrom(lastL2.valset, lastL2.staged) == lastL2.staged
+
+	// stagedRegistrationsInvariant: all registrations applied to the
+	// validator set were previously staged, up the previous epoch
+	def stagedRegistrationsInvariant =
+		val currentEpoch = epoch(lastL2.height)
+		val stagedRegs = L2.foldl(Set(), (s, b) =>
+			if (b.height < epochStart(currentEpoch))
+				 s.union(b.staged)
+			else
+				s)
+		lastL2.valset == max(stagedRegs)
 
 	// unstagedNotStagedInvariant: unstaged registrations should not
 	// include staged or already applied registrations.
@@ -120,17 +123,26 @@ module valset {
 	// unstaged registrations.
 	def unstagedRegistrationsInvariant =
 		val commRegs = committedRegistrations(L2)
-		val stagedRegs = L2.foldl(Set(), (s, b) => s.union(b.unstaged))
-		stagedRegs == commRegs
+		val unstagedRegs = L2.foldl(Set(), (s, b) => s.union(b.unstaged))
+		unstagedRegs == commRegs
+
+	// valsetInvariant: validator set for a block of epoch E is produced
+	// from all registrations committed up to the end of epoch E-2
+	def valsetInvariant =
+		val currentEpoch = epoch(lastL2.height)
+		val epochMinusTwoEnd = epochStart(currentEpoch - 1) - 1
+		val commRegs = committedRegistrations(L2.slice(0, epochMinusTwoEnd + 1))
+		lastL2.valset == nextValidatorSet(0, commRegs)
 
 	// invariants is an alias for all evaluated invariants
 	def invariants =
-		heightsInvariant and
-		regsIntegrityInvariant and
-		valsetInvariant	and
-		orderedStagedInvariant and
-		unstagedNotStagedInvariant and
-		unstagedRegistrationsInvariant
+		heightsInvariant
+		and regsIntegrityInvariant
+		and stagedOrderedInvariant
+		and stagedRegistrationsInvariant
+		and unstagedNotStagedInvariant
+		and unstagedRegistrationsInvariant
+		and valsetInvariant
 
 	//
 	// STATE MACHINE
