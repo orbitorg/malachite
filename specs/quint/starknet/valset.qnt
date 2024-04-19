@@ -13,6 +13,7 @@ module valset {
 	type Block = {
 		height: int,
 		registrations: Set[Registration],
+		unstaged: Set[Registration],
 	}
 
 	// committedRegistrations returns all registration added to every block
@@ -25,9 +26,11 @@ module valset {
 	// newBlock produces a new block form the previous block and new registrations
 	pure def newBlock(previous: Block, registrations: Set[Registration]) : Block = {
 		val height = previous.height + 1
+		val unstaged = previous.unstaged.union(registrations)
 		{
 			height: height,
 			registrations: registrations,
+			unstaged: unstaged,
 		}
 	}
 
@@ -52,8 +55,13 @@ module valset {
 		val commRegs = committedRegistrations(L2)
 		commRegs.filter(x => x <= 0) == Set() and commRegs.subseteq(regs)
 
+	// regsUnstagedInvariant: committed invariants become unstaged
+	def regsUnstagedInvariant =
+		val commRegs = committedRegistrations(L2)
+		lastL2.unstaged == commRegs
+
 	// invariants is an alias for all evaluated invariants
-	def invariants = heightsInvariant and regsIntegrityInvariant
+	def invariants = heightsInvariant and regsIntegrityInvariant and regsUnstagedInvariant
 
 	//
 	// STATE MACHINE
@@ -68,6 +76,7 @@ module valset {
 		L2' = List({
 			height: 0,
 			registrations: Set(),
+			unstaged: Set(),
 		}),
 	}
 
