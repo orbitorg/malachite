@@ -22,6 +22,19 @@ module valset {
 		valset: ValidatorSet,
 	}
 
+	// Epochs for L2 blockchain
+	val L2epochLength = 3
+
+	// epoch to which a height belongs
+	pure def epoch(height: int) : int = {
+		height / L2epochLength
+	}
+
+	// epochStart is the first height of an epoch
+	pure def epochStart(epoch: int) : int = {
+		epoch * L2epochLength
+	}
+
 	// committedRegistrations returns all registration added to every block
 	// from the provided blockchain.
 	pure def committedRegistrations(blockchain: List[Block]) : Set[Registration] = {
@@ -45,7 +58,11 @@ module valset {
 	pure def newBlock(previous: Block, registrations: Set[Registration]) : Block = {
 		val height = previous.height + 1
 		val unstaged = previous.unstaged.union(registrations)
-		val valset = nextValidatorSet(previous.valset, previous.unstaged)
+		val valset =
+			if (height == epochStart(epoch(height))) // new epoch
+				nextValidatorSet(previous.valset, previous.unstaged)
+			else
+				previous.valset
 		{
 			height: height,
 			registrations: registrations,
@@ -80,10 +97,11 @@ module valset {
 		val commRegs = committedRegistrations(L2)
 		lastL2.unstaged == commRegs
 
-	// valsetInvariant: validator set for a block is produced from all
-	// registrations committed up to the previous block
+	// valsetInvariant: validator set for a block of epoch E is produced
+	// from all registrations committed up to the previous epoch E-1
 	def valsetInvariant =
-		val commRegs = committedRegistrations(L2.slice(0, length(L2) - 1))
+		val currentEpoch = epoch(lastL2.height)
+		val commRegs = committedRegistrations(L2.slice(0, epochStart(currentEpoch)))
 		lastL2.valset == nextValidatorSet(0, commRegs)
 
 	// invariants is an alias for all evaluated invariants
