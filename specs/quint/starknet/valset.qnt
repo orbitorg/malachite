@@ -15,7 +15,6 @@ module valset {
 	// The last registration applied
 	type ValidatorSet = Registration
 
-	// TODO: introduce staged registrations
 	type L2Block = {
 		height: int,
 		registrations: Set[Registration],
@@ -65,18 +64,18 @@ module valset {
 	// newL2Block produces a new block form the previous block and new registrations
 	pure def newL2Block(previous: L2Block, registrations: Set[Registration]) : L2Block = {
 		val height = previous.height + 1
-		// TODO: clean-up staged and unstaged, that now are historic
+		// TODO: clean-up unstaged, that now is historic
 		val unstaged = previous.unstaged.union(registrations)
-		val staged =
-			if (height == epochStart(epoch(height))) // new epoch
-				previous.unstaged
-			else
-				previous.staged
 		val valset =
 			if (height == epochStart(epoch(height))) // new epoch
 				nextValidatorSet(previous.valset, previous.staged)
 			else
 				previous.valset
+		val staged =
+			if (height == epochStart(epoch(height))) // new epoch
+				orderedPrefixFrom(valset + 1, previous.unstaged)
+			else
+				previous.staged
 		{
 			height: height,
 			registrations: registrations,
@@ -120,12 +119,19 @@ module valset {
 		val commRegs = committedRegistrations(L2.slice(0, epochMinusTwoEnd + 1))
 		lastL2.valset == nextValidatorSet(0, commRegs)
 
+	// orderedStagedInvariant: all staged registrations are applicable,
+	// namely, they follow the validator set and are in order. Moreover,
+	// registrations already applied should not be still staged.
+	def orderedStagedInvariant =
+		orderedPrefixFrom(lastL2.valset + 1, lastL2.staged) == lastL2.staged
+
 	// invariants is an alias for all evaluated invariants
 	def invariants =
 		heightsInvariant and
 		regsIntegrityInvariant and
 		regsUnstagedInvariant and
-		valsetInvariant
+		valsetInvariant	and
+		orderedStagedInvariant
 
 	//
 	// STATE MACHINE
