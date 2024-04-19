@@ -16,6 +16,7 @@ module valset {
 	type ValidatorSet = Registration
 
 	type L2Block = {
+		forkID: int,
 		height: int,
 		registrations: Set[Registration],
 		staged: Set[Registration],
@@ -73,9 +74,29 @@ module valset {
 		val unstaged = previous.unstaged.union(registrations).
 			filter(r => r > lastStaged)
 		{
+			forkID: previous.forkID,
 			height: height,
 			registrations: registrations,
 			staged: staged,
+			unstaged: unstaged,
+			valset: valset,
+		}
+	}
+
+	// newL2ForkBlock produces the first block of a new fork, enforcing the
+	// application of stale registrations
+	// Contract: staleRegistrations cannot be empty and must be applicable
+	pure def newL2ForkBlock(previous: L2Block, staleRegistrations: Set[Registration]) : L2Block = {
+		val valset = nextValidatorSet(previous.valset, staleRegistrations)
+		val unstaged = previous.unstaged.filter(r => r > valset)
+		// TODO: make sure that the forkID unique
+		val forkID = previous.forkID + 1
+		// val forkID = valset
+		{
+			forkID: forkID,
+			height: previous.height + 1,
+			registrations: staleRegistrations,
+			staged: Set(),
 			unstaged: unstaged,
 			valset: valset,
 		}
@@ -104,6 +125,7 @@ module valset {
 
 	// stagedRegistrationsInvariant: all registrations applied to the
 	// validator set were previously staged, up the previous epoch
+	// TODO: fails with the introduction of forkL2
 	def stagedRegistrationsInvariant =
 		val currentEpoch = epoch(lastL2.height)
 		val stagedRegs = L2.foldl(Set(), (s, b) =>
@@ -121,6 +143,7 @@ module valset {
 
 	// unstagedRegistrationsInvariant: all registrations added do L2 become
 	// unstaged registrations.
+	// TODO: fails with the introduction of forkL2
 	def unstagedRegistrationsInvariant =
 		val commRegs = committedRegistrations(L2)
 		val unstagedRegs = L2.foldl(Set(), (s, b) => s.union(b.unstaged))
@@ -128,6 +151,7 @@ module valset {
 
 	// valsetInvariant: validator set for a block of epoch E is produced
 	// from all registrations committed up to the end of epoch E-2
+	// TODO: fails with the introduction of forkL2
 	def valsetInvariant =
 		val currentEpoch = epoch(lastL2.height)
 		val epochMinusTwoEnd = epochStart(currentEpoch - 1) - 1
@@ -157,6 +181,7 @@ module valset {
 	action init = all {
 		regs' = Set(),
 		L2' = List({
+			forkID: 0,
 			height: 0,
 			registrations: Set(),
 			staged: Set(),
@@ -181,10 +206,26 @@ module valset {
 		regs' = regs,
 	}
 
+	action forkL2 = all {
+		// TODO: forkHeight should not be prior to previous fork
+		nondet forkHeight = 1.to(length(L2)).oneOf()
+		val previous = L2[forkHeight - 1]
+		// Select a random-size subsequence of registrations; if some
+		// of them are not in the validator set, they are stale.
+		nondet lastStale = 0.to(size(regs)).oneOf()
+		val staleRegs = regs.filter(r => r > previous.valset and r <= lastStale)
+		if (size(staleRegs) > 0)
+			L2' = L2.slice(0, forkHeight).append(newL2ForkBlock(previous, staleRegs))
+		else
+			L2' = L2,
+		regs' = regs,
+	}
+
 	// any state transition
 	action step = any {
 		addRegistration,
 		addL2Block,
+		forkL2,
 	}
 
 }
