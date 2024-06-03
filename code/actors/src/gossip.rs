@@ -74,7 +74,7 @@ impl Actor for Gossip {
         myself: ActorRef<Msg>,
         args: Args,
     ) -> Result<State, ActorProcessingErr> {
-        let handle = malachite_gossip::spawn(args.keypair, args.addr, args.config).await?;
+        let handle = malachite_gossip::spawn(args.keypair, args.addr, args.config, Channel::Consensus).await?;
         let (mut recv_handle, ctrl_handle) = handle.split();
 
         let recv_task = tokio::spawn({

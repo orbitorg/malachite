@@ -20,13 +20,10 @@ use handle::Handle;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Channel {
     Consensus,
+    Mempool,
 }
 
 impl Channel {
-    pub fn all() -> &'static [Channel] {
-        &[Channel::Consensus]
-    }
-
     pub fn to_topic(self) -> gossipsub::IdentTopic {
         gossipsub::IdentTopic::new(self.as_str())
     }
@@ -38,18 +35,14 @@ impl Channel {
     pub fn as_str(&self) -> &'static str {
         match self {
             Channel::Consensus => "/consensus",
+            Channel::Mempool => "/mempool",
         }
-    }
-
-    pub fn has_topic(topic_hash: &gossipsub::TopicHash) -> bool {
-        Self::all()
-            .iter()
-            .any(|channel| &channel.topic_hash() == topic_hash)
     }
 
     pub fn from_topic_hash(topic: &gossipsub::TopicHash) -> Option<Self> {
         match topic.as_str() {
             "/consensus" => Some(Channel::Consensus),
+            "/mempool" => Some(Channel::Mempool),
             _ => None,
         }
     }
@@ -98,7 +91,7 @@ pub enum CtrlMsg {
     Shutdown,
 }
 
-pub async fn spawn(keypair: Keypair, addr: Multiaddr, config: Config) -> Result<Handle, BoxError> {
+pub async fn spawn(keypair: Keypair, addr: Multiaddr, config: Config, channel: Channel) -> Result<Handle, BoxError> {
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_quic()
@@ -106,12 +99,10 @@ pub async fn spawn(keypair: Keypair, addr: Multiaddr, config: Config) -> Result<
         .with_swarm_config(|cfg| config.apply(cfg))
         .build();
 
-    for channel in Channel::all() {
-        swarm
-            .behaviour_mut()
-            .gossipsub
-            .subscribe(&channel.to_topic())?;
-    }
+    swarm
+        .behaviour_mut()
+        .gossipsub
+        .subscribe(&channel.to_topic())?;
 
     swarm.listen_on(addr)?;
 
@@ -120,7 +111,7 @@ pub async fn spawn(keypair: Keypair, addr: Multiaddr, config: Config) -> Result<
 
     let peer_id = swarm.local_peer_id();
     let span = error_span!("gossip", peer = %peer_id);
-    let task_handle = tokio::task::spawn(run(swarm, rx_ctrl, tx_event).instrument(span));
+    let task_handle = tokio::task::spawn(run(swarm, rx_ctrl, tx_event, channel).instrument(span));
 
     Ok(Handle::new(tx_ctrl, rx_event, task_handle))
 }
@@ -129,11 +120,12 @@ async fn run(
     mut swarm: swarm::Swarm<Behaviour>,
     mut rx_ctrl: mpsc::Receiver<CtrlMsg>,
     tx_event: mpsc::Sender<Event>,
+    channel: Channel,
 ) {
     loop {
         let result = tokio::select! {
             event = swarm.select_next_some() => {
-                handle_swarm_event(event, &mut swarm, &tx_event).await
+                handle_swarm_event(event, &mut swarm, &tx_event, channel).await
             }
 
             Some(ctrl) = rx_ctrl.recv() => {
@@ -178,6 +170,7 @@ async fn handle_swarm_event(
     event: SwarmEvent<NetworkEvent>,
     swarm: &mut swarm::Swarm<Behaviour>,
     tx_event: &mpsc::Sender<Event>,
+    channel: Channel,
 ) -> ControlFlow<()> {
     match event {
         SwarmEvent::NewListenAddr { address, .. } => {
@@ -231,7 +224,7 @@ async fn handle_swarm_event(
             peer_id,
             topic: topic_hash,
         })) => {
-            if !Channel::has_topic(&topic_hash) {
+            if channel.topic_hash() != topic_hash {
                 debug!("Peer {peer_id} tried to subscribe to unknown topic: {topic_hash}");
                 return ControlFlow::Continue(());
             }
