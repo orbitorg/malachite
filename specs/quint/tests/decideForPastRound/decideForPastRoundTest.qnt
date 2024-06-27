@@ -11,7 +11,7 @@ import decideForPastRound(
     Heights = Set(0), // , 1, 2, 3)
     otherSet = Set("v2", "v3"),
     testedVal = ("v4")
-) as N4F1 from "./decideForPastRound"
+) as N4F1 from "./decideForPastRoundrun"
 
 run decidePastTest = {
     N4F1::runToDecision
