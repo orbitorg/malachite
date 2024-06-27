@@ -41,7 +41,7 @@ run runToDecision = {
     .then(ListDeliverAllVotes (Precommit, faultyList, others, validatorSet, 0, 0, Val("blue")))
     .then(ProcessDeliverAllVotes (Precommit, testedVal, faultyList, validatorSet, 0, 0, Nil))
 
-// Precommit from others are deliverd to all correct processes
+// Precommit from others are delivered to all correct processes
     .then(ListDeliverAllVotes (Precommit, others, correctList, validatorSet, 0, 0, Val("blue")))
 // correct ones (others and testedVal) take steps to process all incoming precommits
     .then(others.concat(faultyList).length().reps(_ => ListTakeAStep(others.concat(List(testedVal)))))
