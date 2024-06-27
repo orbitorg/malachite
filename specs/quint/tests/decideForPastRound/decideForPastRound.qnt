@@ -2,11 +2,11 @@
 
 module decideForPastRound {
 
-import TendermintDSL.* from "./TendermintDSL"
+import TendermintDSL.* from "../../specs/TendermintDSL"
 export TendermintDSL.*
 
-const testedVal : Address_t
-const otherSet : Set[Address_t]
+const testedVal : Address
+const otherSet : Set[Address]
 val others = otherSet.fold(List(), (s, x) => s.append(x)) 
 
 /*
@@ -20,7 +20,7 @@ val others = otherSet.fold(List(), (s, x) => s.append(x))
 */
 
 run runToDecision = {
-    val nextProposer = Proposer (validatorSet, 0, 1)
+    val nextProposer = proposer(validatorSet, 0, 1)
     init
     .then(valStep(testedVal))
 // proposer sends proposal and other processes receive it -> send prevote value
@@ -33,16 +33,16 @@ run runToDecision = {
     })
 
 // Others receive the prevotes of others and the faulty ones -> send precommit value
-    .then(ListDeliverAllVotes ("Prevote", others.concat(faultyList), others, validatorSet, 0, 0, "blue"))
+    .then(ListDeliverAllVotes (Prevote, others.concat(faultyList), others, validatorSet, 0, 0, Val("blue")))
     .then(others.concat(faultyList).length().reps(_ => ListTakeAStep(others)))
     .then(ListTakeAStep(others))
 
 // Precommit from faulty processes are delivered -> value to others, nil to testedVal
-    .then(ListDeliverAllVotes ("Precommit", faultyList, others, validatorSet, 0, 0, "blue"))
-    .then(ProcessDeliverAllVotes ("Precommit", testedVal, faultyList, validatorSet, 0, 0, "nil"))
+    .then(ListDeliverAllVotes (Precommit, faultyList, others, validatorSet, 0, 0, Val("blue")))
+    .then(ProcessDeliverAllVotes (Precommit, testedVal, faultyList, validatorSet, 0, 0, Nil))
 
 // Precommit from others are deliverd to all correct processes
-    .then(ListDeliverAllVotes ("Precommit", others, correctList, validatorSet, 0, 0, "blue"))
+    .then(ListDeliverAllVotes (Precommit, others, correctList, validatorSet, 0, 0, Val("blue")))
 // correct ones (others and testedVal) take steps to process all incoming precommits
     .then(others.concat(faultyList).length().reps(_ => ListTakeAStep(others.concat(List(testedVal)))))
 
