@@ -5,13 +5,28 @@ module line28run {
 import TendermintDSL.* from "../../specs/TendermintDSL"
 export TendermintDSL.*
 
-const otherSet: Set[Address]
+const otherSet : Set[Address]
 val others = otherSet.fold(List(), (s, x) => s.append(x)) 
+
+/*
+- there need to be faulty processes
+- there are other processes that together with the faulty ones are 2f+1
+- the others include the proposer.
+- the others are successful until sending precommit value
+    - they set locked value and valid value
+- then faulty precommit nil are delivered to correct processes
+- the precommits from others are delivered to correct processes so that timeoutprecommit is started
+- correct processes go to the next round
+- there the proposer
+    - uses the valid value stored to send proposal for valid value
+    - correct processes take this to execute line 28 and prevote for this value
+*/
 
 run runToLine28 = 
     val nextProposer = proposer(validatorSet, 0, 1)
     nondet value = oneOf(Values)
     init
+    // proposer sends proposal and correct processes receive -> send prevote value
     .then(all {
         // others should be at most 2/3.
         // if this assertion fails the set need to be set differently
