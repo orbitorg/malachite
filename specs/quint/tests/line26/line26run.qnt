@@ -2,10 +2,10 @@
 
 module line26run {
 
-import TendermintDSL.* from "./TendermintDSL"
+import TendermintDSL.* from "../../specs/TendermintDSL"
 export TendermintDSL.*
 
-const otherSet : Set[Address_t]
+const otherSet : Set[Address]
 val others = otherSet.fold(List(), (s, x) => s.append(x)) 
 
 /*
@@ -23,7 +23,8 @@ val others = otherSet.fold(List(), (s, x) => s.append(x))
 */
 
 run runToLine26 = {
-    val nextProposer = Proposer (validatorSet, 0, 1)
+    val nextProposer = proposer(validatorSet, 0, 1)
+    nondet value = oneOf(Values)
     init
 
     // proposer sends proposal and correct processes receive -> send prevote value
@@ -32,25 +33,25 @@ run runToLine26 = {
         // if this assertion fails the set need to be set differently
         assert(3 * size(otherSet) <= 2 * size(validators)),  
         assert(3 * size(otherSet.union(Faulty)) > 2 * size(validators)),  
-        everyoneReceivesProposal(correctList, validatorList, validatorSet, 0, 0, "blue")
+        everyoneReceivesProposal(correctList, validatorList, validatorSet, 0, 0, value)
     })
     // correct processes receive prevotes from correct processes -> send precommit    
-    .then(fromPrevoteToPrecommit (correctList, correctList, validatorList, validatorSet, 0, 0, "blue"))
+    .then(fromPrevoteToPrecommit(correctList, correctList, validatorList, validatorSet, 0, 0, Val(value)))
     // TODO assertion: valid and locked is set.
     // now the faulty nodes precommit nil
-    .then(ListDeliverAllVotes("Precommit", faultyList, correctList, validatorSet, 0, 0, "nil"))
+    .then(ListDeliverAllVotes(Precommit, faultyList, correctList, validatorSet, 0, 0, Nil))
     // correct processes receive faulty precommit nil
     .then(faultyList.length().reps(_ => ListTakeAStep(correctList)))   
     // now the precommits from some correct processes are delivered, 
     // "other" processes are just enough so that timeoutPrecommit is started
-    .then(ListDeliverAllVotes("Precommit", others, correctList, validatorSet, 0, 0, "blue"))
+    .then(ListDeliverAllVotes(Precommit, others, correctList, validatorSet, 0, 0, Val(value)))
     .then(others.length().reps(_ => ListTakeAStep(correctList)))
     .then(ListTakeAStep(correctList))
-    .then(ListDeliverProposal(correctList, { src: "v3", height: 0, round: 1, proposal: "red", validRound: -1 }))
+    .then(ListDeliverProposal(correctList, mkProposal("v3", 0, 1, nextProposer, -1)))
     .then(ListTakeAStep(correctList))
     .then(all{
         // TODO: parameterize assertion
-        assert(voteBuffer.get("v1").contains({ height: 0, id: "nil", round: 1, src: "v4", step: "Prevote" })),
+        assert(voteBuffer.get(nextProposer).contains(mkVote(Prevote, nextProposer, 0, 1, Val(value)))),
         unchangedAll
     })
 }
