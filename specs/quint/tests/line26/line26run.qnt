@@ -47,11 +47,11 @@ run runToLine26 = {
     .then(ListDeliverAllVotes(Precommit, others, correctList, validatorSet, 0, 0, Val(value)))
     .then(others.length().reps(_ => ListTakeAStep(correctList)))
     .then(ListTakeAStep(correctList))
-    .then(ListDeliverProposal(correctList, mkProposal("v3", 0, 1, nextProposer, -1)))
+    .then(ListDeliverProposal(correctList, mkProposal("v3", 0, 1, "red", -1)))
     .then(ListTakeAStep(correctList))
     .then(all{
         // TODO: parameterize assertion
-        assert(voteBuffer.get(nextProposer).contains(mkVote(Prevote, nextProposer, 0, 1, Val(value)))),
+        assert(voteBuffer.get("v1").contains(mkVote(Prevote, "v4", 0, 1, Nil))),
         unchangedAll
     })
 }
