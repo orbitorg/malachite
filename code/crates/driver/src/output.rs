@@ -1,6 +1,7 @@
 use derive_where::derive_where;
 
 use malachite_common::{Context, Round, Timeout};
+use malachite_round::state::Step;
 
 /// Messages emitted by the [`Driver`](crate::Driver)
 #[derive_where(Clone, Debug, PartialEq, Eq)]
@@ -26,4 +27,7 @@ where
     /// Ask for a value at the given height, round.
     /// The timeout tells the proposal builder how long it has to build a value.
     GetValue(Ctx::Height, Round, Timeout),
+
+    /// The round state machine has moved to a new step
+    MovedToStep(Ctx::Height, Round, Step),
 }

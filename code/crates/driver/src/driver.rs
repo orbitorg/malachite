@@ -129,15 +129,18 @@ where
 
     /// Process the given input, returning the outputs to be broadcast to the network.
     pub fn process(&mut self, msg: Input<Ctx>) -> Result<Vec<Output<Ctx>>, Error<Ctx>> {
-        let round_output = match self.apply(msg)? {
-            Some(msg) => msg,
-            None => return Ok(Vec::new()),
-        };
+        let round_outputs = self.apply(msg)?;
+
+        if round_outputs.is_empty() {
+            return Ok(vec![]);
+        }
 
         let mut outputs = vec![];
 
-        // Lift the round state machine output to one or more driver outputs
-        self.lift_output(round_output, &mut outputs);
+        // Lift the round state machine outputs to one or more driver outputs
+        for round_output in round_outputs {
+            self.lift_output(round_output, &mut outputs);
+        }
 
         // Apply the pending inputs, if any, and lift their outputs
         self.process_pending(&mut outputs)?;
@@ -148,9 +151,9 @@ where
     /// Process the pending input, if any.
     fn process_pending(&mut self, outputs: &mut Vec<Output<Ctx>>) -> Result<(), Error<Ctx>> {
         while let Some((round, input)) = self.pending_input.take() {
-            if let Some(round_output) = self.apply_input(round, input)? {
+            for round_output in self.apply_input(round, input)? {
                 self.lift_output(round_output, outputs);
-            };
+            }
         }
 
         Ok(())
@@ -173,11 +176,15 @@ where
             }
 
             RoundOutput::Decision(value) => outputs.push(Output::Decide(value.round, value.value)),
+
+            RoundOutput::MovedToStep(height, round, step) => {
+                outputs.push(Output::MovedToStep(height, round, step))
+            }
         }
     }
 
     /// Apply the given input to the state machine, returning the output, if any.
-    fn apply(&mut self, input: Input<Ctx>) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    fn apply(&mut self, input: Input<Ctx>) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         match input {
             Input::NewRound(height, round, proposer) => {
                 self.apply_new_round(height, round, proposer)
@@ -194,7 +201,7 @@ where
         height: Ctx::Height,
         round: Round,
         proposer: Ctx::Address,
-    ) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    ) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         if self.height() == height {
             // If it's a new round for same height, just reset the round, keep the valid and locked values
             self.round_state.round = round;
@@ -212,7 +219,7 @@ where
         &mut self,
         round: Round,
         value: Ctx::Value,
-    ) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    ) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         self.apply_input(round, RoundInput::ProposeValue(value))
     }
 
@@ -220,7 +227,7 @@ where
         &mut self,
         proposal: Ctx::Proposal,
         validity: Validity,
-    ) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    ) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         if self.height() != proposal.height() {
             return Err(Error::InvalidProposalHeight {
                 proposal_height: proposal.height(),
@@ -232,11 +239,11 @@ where
 
         match self.multiplex_proposal(proposal, validity) {
             Some(round_input) => self.apply_input(round, round_input),
-            None => Ok(None),
+            None => Ok(Vec::new()),
         }
     }
 
-    fn apply_vote(&mut self, vote: Ctx::Vote) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    fn apply_vote(&mut self, vote: Ctx::Vote) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         if self.height() != vote.height() {
             return Err(Error::InvalidVoteHeight {
                 vote_height: vote.height(),
@@ -257,21 +264,21 @@ where
                 .apply_vote(vote, validator.voting_power(), current_round);
 
         let Some(vote_output) = vote_output else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
 
         let round_input = self.multiplex_vote_threshold(vote_output);
         self.apply_input(vote_round, round_input)
     }
 
-    fn apply_timeout(&mut self, timeout: Timeout) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    fn apply_timeout(&mut self, timeout: Timeout) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         let input = match timeout.step {
             TimeoutStep::Propose => RoundInput::TimeoutPropose,
             TimeoutStep::Prevote => RoundInput::TimeoutPrevote,
             TimeoutStep::Precommit => RoundInput::TimeoutPrecommit,
 
             // The driver never receives a commit timeout, so we can just ignore it.
-            TimeoutStep::Commit => return Ok(None),
+            TimeoutStep::Commit => return Ok(Vec::new()),
         };
 
         self.apply_input(timeout.round, input)
@@ -282,7 +289,7 @@ where
         &mut self,
         input_round: Round,
         input: RoundInput<Ctx>,
-    ) -> Result<Option<RoundOutput<Ctx>>, Error<Ctx>> {
+    ) -> Result<Vec<RoundOutput<Ctx>>, Error<Ctx>> {
         let round_state = core::mem::take(&mut self.round_state);
         let current_step = round_state.step;
 
@@ -292,19 +299,31 @@ where
         // Apply the input to the round state machine
         let transition = round_state.apply(&info, input);
 
+        // Initialize outputs with the output of the transition
+        let mut outputs = Vec::from_iter(transition.output);
+
+        // Check if we need to change step
         let pending_step = transition.next_state.step;
 
         if current_step != pending_step {
-            let pending_input = self.multiplex_step_change(pending_step, input_round);
+            if let Some(pending_input) = self.multiplex_step_change(pending_step, input_round) {
+                self.pending_input = Some((input_round, pending_input));
+            } else {
+                self.pending_input = None;
+            }
 
-            self.pending_input = pending_input.map(|input| (input_round, input));
+            outputs.push(RoundOutput::MovedToStep(
+                transition.next_state.height,
+                transition.next_state.round,
+                pending_step,
+            ));
         }
 
         // Update state
         self.round_state = transition.next_state;
 
-        // Return output, if any
-        Ok(transition.output)
+        // Return outputs, if any
+        Ok(outputs)
     }
 }
 

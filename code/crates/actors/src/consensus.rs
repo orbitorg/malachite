@@ -545,6 +545,12 @@ where
                 )))
             }
 
+            DriverOutput::MovedToStep(height, round, step) => {
+                info!("Moved to step {step:?} at height {height} and round {round}");
+
+                Ok(Next::None)
+            }
+
             DriverOutput::Propose(proposal) => {
                 info!(
                     "Proposing value with id: {}, at round {}",

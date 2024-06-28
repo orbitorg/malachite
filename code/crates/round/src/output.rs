@@ -4,7 +4,7 @@ use derive_where::derive_where;
 
 use malachite_common::{Context, NilOrVal, Round, Timeout, TimeoutStep, ValueId};
 
-use crate::state::RoundValue;
+use crate::state::{RoundValue, Step};
 
 /// Output of the round state machine.
 #[derive_where(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +30,9 @@ where
 
     /// Decide the value.
     Decision(RoundValue<Ctx::Value>),
+
+    /// The round state machine as moved to a new step
+    MovedToStep(Ctx::Height, Round, Step),
 }
 
 impl<Ctx: Context> Output<Ctx> {
