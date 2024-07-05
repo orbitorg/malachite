@@ -40,6 +40,8 @@ malachite-test             = { version = "0.1.0", path = "crates/test" }
 malachite-vote             = { version = "0.1.0", path = "crates/vote" }
 malachite-starknet-host    = { version = "0.1.0", path = "crates/starknet-host" }
 malachite-starknet-app     = { version = "0.1.0", path = "crates/starknet-app" }
+malachite-kv-app           = { version = "0.1.0", path = "crates/kv-app" }
+
 
 async-recursion    = "1.1"
 async-trait        = "0.1.77"

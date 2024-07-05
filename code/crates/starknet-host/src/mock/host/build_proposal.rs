@@ -91,6 +91,9 @@ async fn run_build_proposal_task(
 
         let txes = txes.into_iter().take(tx_count).collect::<Vec<_>>();
 
+        // We're simulating execution time here
+        // Because we're executing here, this assumes the same-block execution mode
+        // To do delayed execution mode, we'd do some changes here
         tokio::time::sleep(params.exec_time_per_tx * tx_count as u32).await;
 
         block_tx_count += tx_count;
@@ -120,6 +123,7 @@ async fn run_build_proposal_task(
     let proof = vec![42];
 
     let hash = block_hasher.finalize();
+    // Adi: Note the same-block execution mode here
     let block_hash = BlockHash::new(hash.into());
     let block_metadata = BlockMetadata::new(proof, block_hash);
     let part = ProposalPart::Metadata(sequence, block_metadata);
