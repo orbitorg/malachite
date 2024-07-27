@@ -25,18 +25,18 @@ pub fn main() -> Result<()> {
 
     logging::init(logging.log_level, logging.log_format);
 
-    trace!("Command-line parameters: {args:?}");
+    trace!(?args, "Found command-line parameters.");
 
     match &args.command {
         Commands::Start(cmd) => {
-            let config = config.map_err(|e| {
-                error!("Failed to load configuration: {e}");
-                e
+            let config = config.map_err(|error| {
+                error!(%error, "Configuration failed.");
+                error
             })?;
 
             info!(
-                "Loaded configuration from {:?}",
-                args.get_config_file_path().unwrap_or_default().display()
+                file = %args.get_config_file_path().unwrap_or_default().display(),
+                "Loaded configuration file."
             );
 
             start(&args, config, cmd)

@@ -18,12 +18,12 @@ impl GenerateCmd {
         let pk = PrivateKey::generate(rng);
 
         let address = Address::from_public_key(&pk.public_key());
-        info!("Generated key with address: {address}");
 
         let public_key = pk.public_key();
-        info!("Public key: {}", serde_json::to_string_pretty(&public_key)?);
 
-        info!("Saving private key to {:?}", self.output);
+        info!(validator_address = %address, pub_key=serde_json::to_string(&public_key)?, "Generated key.");
+
+        info!(file=%self.output.display(), "Saving private key.");
         std::fs::write(&self.output, serde_json::to_vec(&pk)?)?;
 
         Ok(())

@@ -15,7 +15,7 @@ use libp2p::swarm::{self, SwarmEvent};
 use libp2p::{gossipsub, identify, SwarmBuilder};
 use libp2p_tls as _; // https://github.com/informalsystems/malachite/issues/269
 use tokio::sync::mpsc;
-use tracing::{debug, error, error_span, trace, Instrument};
+use tracing::{debug, error, error_span, info, trace, Instrument};
 
 use malachite_common::Context;
 use malachite_metrics::SharedRegistry;
@@ -141,8 +141,7 @@ pub async fn spawn<Ctx: Context>(
     let (tx_event, rx_event) = mpsc::channel(32);
     let (tx_ctrl, rx_ctrl) = mpsc::channel(32);
 
-    let peer_id = swarm.local_peer_id();
-    let span = error_span!("gossip-consensus", peer = %peer_id);
+    let span = error_span!("gossip-consensus");
     let task_handle =
         tokio::task::spawn(run(config, metrics, swarm, rx_ctrl, tx_event).instrument(span));
 
@@ -156,17 +155,18 @@ async fn run<Ctx: Context>(
     mut rx_ctrl: mpsc::Receiver<CtrlMsg<Ctx>>,
     tx_event: mpsc::Sender<Event<Ctx>>,
 ) {
-    if let Err(e) = swarm.listen_on(config.listen_addr.clone()) {
-        error!("Error listening on {}: {e}", config.listen_addr);
+    info!(local_peer_id = %swarm.local_peer_id(), "Have local peer ID.");
+    if let Err(error) = swarm.listen_on(config.listen_addr.clone()) {
+        error!(%error, address = %config.listen_addr, "Listen.");
         return;
     };
 
     for persistent_peer in config.persistent_peers {
-        trace!("Dialing persistent peer: {persistent_peer}");
+        trace!(%persistent_peer, "Dial persistent peer.");
 
         match swarm.dial(persistent_peer.clone()) {
             Ok(()) => (),
-            Err(e) => error!("Error dialing persistent peer {persistent_peer}: {e}"),
+            Err(error) => error!(%error, %persistent_peer, "Dial persistent peer."),
         }
     }
 
@@ -199,8 +199,8 @@ async fn handle_ctrl_msg<Ctx: Context>(
             let msg = NetworkMsg(msg);
             let data = match msg.to_network_bytes() {
                 Ok(data) => data,
-                Err(e) => {
-                    error!("Error encoding message {msg:?}: {e}");
+                Err(error) => {
+                    error!(%error, ?msg, "Encode message.");
                     return ControlFlow::Continue(());
                 }
             };
@@ -214,10 +214,10 @@ async fn handle_ctrl_msg<Ctx: Context>(
 
             match result {
                 Ok(message_id) => {
-                    debug!("Broadcasted message {message_id} of {msg_size} bytes");
+                    debug!(%message_id, msg_size, "Broadcast message.");
                 }
-                Err(e) => {
-                    error!("Error broadcasting message: {e}");
+                Err(error) => {
+                    error!(%error, "Broadcast message.");
                 }
             }
 
@@ -243,16 +243,16 @@ async fn handle_swarm_event<Ctx: Context>(
 
     match event {
         SwarmEvent::NewListenAddr { address, .. } => {
-            debug!("Node is listening on {address}");
+            info!(%address, "Have listen address.");
 
-            if let Err(e) = tx_event.send(Event::Listening(address)).await {
-                error!("Error sending listening event to handle: {e}");
+            if let Err(error) = tx_event.send(Event::Listening(address)).await {
+                error!(%error, "Send listening event to handle.");
                 return ControlFlow::Break(());
             }
         }
 
         SwarmEvent::Behaviour(NetworkEvent::Identify(identify::Event::Sent { peer_id })) => {
-            trace!("Sent identity to {peer_id}");
+            trace!(%peer_id, "Send identity.");
         }
 
         SwarmEvent::Behaviour(NetworkEvent::Identify(identify::Event::Received {
@@ -260,23 +260,27 @@ async fn handle_swarm_event<Ctx: Context>(
             info,
         })) => {
             trace!(
-                "Received identity from {peer_id}: protocol={:?}",
-                info.protocol_version
+                %peer_id,
+                protocol_version=?info.protocol_version,
+                "Receive identity."
             );
 
             if info.protocol_version == PROTOCOL_VERSION {
                 trace!(
-                    "Peer {peer_id} is using compatible protocol version: {:?}",
-                    info.protocol_version
+                    %peer_id,
+                    protocol_version=?info.protocol_version,
+                    "Peer is using compatible protocol version."
                 );
 
                 state.peers.insert(peer_id, info);
 
                 swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
             } else {
-                trace!(
-                    "Peer {peer_id} is using incompatible protocol version: {:?}",
-                    info.protocol_version
+                error!(
+                    %peer_id,
+                    protocol_version=?info.protocol_version,
+                    "Peer is using incompatible protocol version.",
+
                 );
             }
         }
@@ -286,14 +290,14 @@ async fn handle_swarm_event<Ctx: Context>(
             topic,
         })) => {
             if !Channel::has_topic(&topic) {
-                trace!("Peer {peer_id} tried to subscribe to unknown topic: {topic}");
+                trace!(%peer_id, %topic, "Peer tried to subscribe to unknown topic.");
                 return ControlFlow::Continue(());
             }
 
-            trace!("Peer {peer_id} subscribed to {topic}");
+            trace!(%peer_id, %topic, "Peer subscribed to topic.");
 
-            if let Err(e) = tx_event.send(Event::PeerConnected(peer_id)).await {
-                error!("Error sending peer connected event to handle: {e}");
+            if let Err(error) = tx_event.send(Event::PeerConnected(peer_id)).await {
+                error!(%error, "Send peer connected event to handle.");
                 return ControlFlow::Break(());
             }
         }
@@ -303,14 +307,14 @@ async fn handle_swarm_event<Ctx: Context>(
             topic,
         })) => {
             if !Channel::has_topic(&topic) {
-                trace!("Peer {peer_id} tried to unsubscribe from unknown topic: {topic}");
+                trace!(%peer_id, %topic, "Peer tried to unsubscribe from unknown topic.");
                 return ControlFlow::Continue(());
             }
 
-            trace!("Peer {peer_id} unsubscribed from {topic}");
+            trace!(%peer_id, %topic, "Peer unsubscribed from topic.");
 
-            if let Err(e) = tx_event.send(Event::PeerDisconnected(peer_id)).await {
-                error!("Error sending peer disconnected event to handle: {e}");
+            if let Err(error) = tx_event.send(Event::PeerDisconnected(peer_id)).await {
+                error!(%error, "Send peer disconnected event to handle.");
                 return ControlFlow::Break(());
             }
         }
@@ -336,12 +340,15 @@ async fn handle_swarm_event<Ctx: Context>(
             );
 
             let Ok(NetworkMsg(gossip_msg)) = NetworkMsg::from_network_bytes(&message.data) else {
-                error!("Error decoding message {message_id} from {peer_id}: invalid format");
+                error!(
+                    error = "invalid format",
+                    %message_id, %peer_id, "Decode message."
+                );
                 return ControlFlow::Continue(());
             };
 
-            if let Err(e) = tx_event.send(Event::Message(peer_id, gossip_msg)).await {
-                error!("Error sending message to handle: {e}");
+            if let Err(error) = tx_event.send(Event::Message(peer_id, gossip_msg)).await {
+                error!(%error, "Send message to handle.");
                 return ControlFlow::Break(());
             }
         }

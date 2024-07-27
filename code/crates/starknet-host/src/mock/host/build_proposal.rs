@@ -21,7 +21,7 @@ pub async fn build_proposal_task(
     tx_part: mpsc::Sender<ProposalPart>,
     tx_block_hash: oneshot::Sender<BlockHash>,
 ) {
-    if let Err(e) = run_build_proposal_task(
+    if let Err(error) = run_build_proposal_task(
         height,
         round,
         params,
@@ -32,7 +32,7 @@ pub async fn build_proposal_task(
     )
     .await
     {
-        error!("Failed to build proposal: {e:?}");
+        error!(error, "Build proposal.");
     }
 }
 

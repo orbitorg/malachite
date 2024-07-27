@@ -34,7 +34,7 @@ pub struct Args {
     #[arg(long, global = true, value_name = "HOME_DIR")]
     pub home: Option<PathBuf>,
 
-    /// Log level (default: `malachite=debug`)
+    /// Log level (default: `debug`)
     #[arg(long, global = true, value_name = "LOG_LEVEL")]
     pub log_level: Option<LogLevel>,
 
@@ -138,7 +138,7 @@ impl Args {
     /// load_genesis returns the validator set from the genesis file
     pub fn load_genesis(&self) -> Result<ValidatorSet> {
         let genesis_file = self.get_genesis_file_path()?;
-        info!("Loading genesis from {:?}", genesis_file.display());
+        info!(file=%genesis_file.display(), "Got Genesis file path.");
         load_json_file(&genesis_file)
     }
 
@@ -146,7 +146,7 @@ impl Args {
     /// from the priv_validator_key.json file.
     pub fn load_private_key(&self) -> Result<PrivateKey> {
         let priv_key_file = self.get_priv_validator_key_file_path()?;
-        info!("Loading private key from {:?}", priv_key_file.display());
+        info!(file=%priv_key_file.display(), "Got private key file path.");
         let priv_validator_key: PrivValidatorKey = load_json_file(&priv_key_file)?;
         Ok(priv_validator_key.private_key)
     }

@@ -13,7 +13,7 @@ use libp2p::swarm::{self, SwarmEvent};
 use libp2p::{gossipsub, identify, SwarmBuilder};
 use libp2p_tls as _; // https://github.com/informalsystems/malachite/issues/269
 use tokio::sync::mpsc;
-use tracing::{debug, error, error_span, trace, Instrument};
+use tracing::{error, error_span, info, trace, Instrument};
 
 use malachite_metrics::SharedRegistry;
 
@@ -140,8 +140,7 @@ pub async fn spawn(
     let (tx_event, rx_event) = mpsc::channel(32);
     let (tx_ctrl, rx_ctrl) = mpsc::channel(32);
 
-    let peer_id = swarm.local_peer_id();
-    let span = error_span!("gossip-mempool", peer = %peer_id);
+    let span = error_span!("gossip-mempool");
     let task_handle = tokio::task::spawn(run(config, swarm, rx_ctrl, tx_event).instrument(span));
 
     Ok(Handle::new(tx_ctrl, rx_event, task_handle))
@@ -153,17 +152,18 @@ async fn run(
     mut rx_ctrl: mpsc::Receiver<CtrlMsg>,
     tx_event: mpsc::Sender<Event>,
 ) {
-    if let Err(e) = swarm.listen_on(config.listen_addr.clone()) {
-        error!("Error listening on {}: {e}", config.listen_addr);
+    info!(local_peer_id = %swarm.local_peer_id(), "Have local peer ID.");
+    if let Err(error) = swarm.listen_on(config.listen_addr.clone()) {
+        error!(%error, address = %config.listen_addr, "Listen.");
         return;
     };
 
     for persistent_peer in config.persistent_peers {
-        trace!("Dialing persistent peer: {persistent_peer}");
+        trace!(%persistent_peer, "Dial persistent peer.");
 
         match swarm.dial(persistent_peer.clone()) {
             Ok(()) => (),
-            Err(e) => error!("Error dialing persistent peer {persistent_peer}: {e}"),
+            Err(error) => error!(%error, %persistent_peer, "Dial persistent peer."),
         }
     }
 
@@ -199,10 +199,10 @@ async fn handle_ctrl_msg(msg: CtrlMsg, swarm: &mut swarm::Swarm<Behaviour>) -> C
 
             match result {
                 Ok(message_id) => {
-                    trace!("Broadcasted message {message_id} of {msg_size} bytes");
+                    trace!(%message_id, msg_size, "Broadcast message.");
                 }
-                Err(e) => {
-                    error!("Error broadcasting message: {e}");
+                Err(error) => {
+                    error!(%error, "Broadcast message.");
                 }
             }
 
@@ -221,10 +221,10 @@ async fn handle_swarm_event(
 ) -> ControlFlow<()> {
     match event {
         SwarmEvent::NewListenAddr { address, .. } => {
-            debug!("Node is listening on {address}");
+            info!(%address, "Have listen address.");
 
-            if let Err(e) = tx_event.send(Event::Listening(address)).await {
-                error!("Error sending listening event to handle: {e}");
+            if let Err(error) = tx_event.send(Event::Listening(address)).await {
+                error!(%error, "Send listening event to handle.");
                 return ControlFlow::Break(());
             }
         }
@@ -271,8 +271,8 @@ async fn handle_swarm_event(
 
             trace!("Peer {peer_id} subscribed to {topic_hash}");
 
-            if let Err(e) = tx_event.send(Event::PeerConnected(peer_id)).await {
-                error!("Error sending peer connected event to handle: {e}");
+            if let Err(error) = tx_event.send(Event::PeerConnected(peer_id)).await {
+                error!(%error, "Send peer connected event to handle.");
                 return ControlFlow::Break(());
             }
         }
@@ -298,12 +298,12 @@ async fn handle_swarm_event(
             );
 
             let Ok(network_msg) = NetworkMsg::from_network_bytes(&message.data) else {
-                error!("Error decoding message {message_id} from {peer_id}: invalid format");
+                error!(error = "invalid format", %message_id, %peer_id, "Decode.");
                 return ControlFlow::Continue(());
             };
 
-            if let Err(e) = tx_event.send(Event::Message(peer_id, network_msg)).await {
-                error!("Error sending message to handle: {e}");
+            if let Err(error) = tx_event.send(Event::Message(peer_id, network_msg)).await {
+                error!(%error, "Send message to handle.");
                 return ControlFlow::Break(());
             }
         }

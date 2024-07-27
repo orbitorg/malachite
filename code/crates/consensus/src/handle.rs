@@ -58,10 +58,9 @@ where
     Ctx: Context,
 {
     let round = Round::new(0);
-    info!("Starting new height {height} at round {round}");
 
     let proposer = state.get_proposer(height, round).cloned()?;
-    info!("Proposer for height {height} and round {round}: {proposer}");
+    info!(%proposer, "Proposer found for next height.");
 
     apply_driver_input(
         co,
@@ -125,7 +124,10 @@ where
     Ctx: Context,
 {
     let pending_msgs = std::mem::take(&mut state.msg_queue);
-    debug!("Replaying {} messages", pending_msgs.len());
+    info!(
+        msg_count = pending_msgs.len(),
+        "Replay messages for next height."
+    );
 
     for pending_msg in pending_msgs {
         handle_msg(co, state, metrics, pending_msg).await?;
@@ -156,9 +158,8 @@ where
         DriverInput::Proposal(proposal, _) => {
             if proposal.height() != state.driver.height() {
                 warn!(
-                    "Ignoring proposal for height {}, current height: {}",
-                    proposal.height(),
-                    state.driver.height()
+                    proposal_height=%proposal.height(),
+                    "Ignore proposal for different height."
                 );
 
                 return Ok(());
@@ -166,9 +167,8 @@ where
 
             if proposal.round() != state.driver.round() {
                 warn!(
-                    "Ignoring proposal for round {}, current round: {}",
-                    proposal.round(),
-                    state.driver.round()
+                    proposal_round=%proposal.round(),
+                    "Ignore proposal for different round."
                 );
 
                 return Ok(());
@@ -183,9 +183,8 @@ where
         DriverInput::Vote(vote) => {
             if vote.height() != state.driver.height() {
                 warn!(
-                    "Ignoring vote for height {}, current height: {}",
-                    vote.height(),
-                    state.driver.height()
+                    vote_height=%vote.height(),
+                    "Ignore vote for different height."
                 );
 
                 return Ok(());
@@ -193,9 +192,8 @@ where
 
             if vote.round() != state.driver.round() {
                 warn!(
-                    "Ignoring vote for round {}, current round: {}",
-                    vote.round(),
-                    state.driver.round()
+                    vote_round=%vote.round(),
+                    "Ignore vote for different round."
                 );
 
                 return Ok(());
@@ -218,7 +216,7 @@ where
 
     // If the step has changed, update the metrics
     if prev_step != new_step {
-        debug!("Transitioned from {prev_step:?} to {new_step:?}");
+        debug!(?prev_step, ?new_step, "Change step.");
 
         metrics.step_end(prev_step);
         metrics.step_start(new_step);
@@ -256,11 +254,10 @@ where
 {
     match output {
         DriverOutput::NewRound(height, round) => {
-            info!("Starting round {round} at height {height}");
             metrics.round.set(round.as_i64());
 
             let proposer = state.get_proposer(height, round)?;
-            info!("Proposer for height {height} and round {round}: {proposer}");
+            info!(%proposer, "Proposer found for next round.");
 
             apply_driver_input(
                 co,
@@ -273,9 +270,8 @@ where
 
         DriverOutput::Propose(proposal) => {
             info!(
-                "Proposing value with id: {}, at round {}",
-                proposal.value().id(),
-                proposal.round()
+                id = %proposal.value().id(),
+                "Propose value."
             );
 
             let signed_proposal = state.ctx.sign_proposal(proposal);
@@ -296,10 +292,9 @@ where
 
         DriverOutput::Vote(vote) => {
             info!(
-                "Voting {:?} for value {} at round {}",
-                vote.vote_type(),
-                PrettyVal(vote.value().as_ref()),
-                vote.round()
+                vote=?vote.vote_type(),
+                value=%PrettyVal(vote.value().as_ref()),
+                "Vote value.",
             );
 
             let signed_vote = state.ctx.sign_vote(vote);
@@ -311,7 +306,7 @@ where
 
         DriverOutput::Decide(round, value) => {
             // TODO: Remove proposal, votes, block for the round
-            info!("Decided on value {}", value.id());
+            info!(value=%value.id(), "Decide value.");
 
             perform!(co, Effect::ScheduleTimeout(Timeout::commit(round)));
 
@@ -319,7 +314,7 @@ where
         }
 
         DriverOutput::ScheduleTimeout(timeout) => {
-            info!("Scheduling {timeout}");
+            debug!(%timeout, "Schedule timeout.");
 
             perform!(co, Effect::ScheduleTimeout(timeout));
 
@@ -327,7 +322,7 @@ where
         }
 
         DriverOutput::GetValue(height, round, timeout) => {
-            info!("Requesting value at height {height} and round {round}");
+            trace!(%timeout, "Request value.");
 
             perform!(co, Effect::GetValue(height, round, timeout));
 
@@ -349,8 +344,8 @@ where
 {
     if state.driver.height() != height {
         warn!(
-            "Ignoring proposal for height {height}, current height: {}",
-            state.driver.height()
+            %height,
+            "Ignore proposal for different height."
         );
 
         return Ok(());
@@ -358,8 +353,8 @@ where
 
     if state.driver.round() != round {
         warn!(
-            "Ignoring proposal for round {round}, current round: {}",
-            state.driver.round()
+            %round,
+            "Ignore proposal for different round."
         );
 
         return Ok(());
@@ -418,10 +413,7 @@ where
     Ctx: Context,
 {
     match event {
-        GossipEvent::Listening(addr) => {
-            info!("Listening on {addr}");
-            Ok(())
-        }
+        GossipEvent::Listening(_) => Ok(()),
 
         GossipEvent::PeerConnected(peer_id) => {
             if !state.connected_peers.insert(peer_id) {
@@ -429,14 +421,14 @@ where
                 return Ok(());
             }
 
-            info!("Connected to peer {peer_id}");
+            info!(%peer_id, "Connect to peer.");
 
             metrics.connected_peers.inc();
 
             if state.connected_peers.len() == state.driver.validator_set.count() - 1 {
                 info!(
-                    "Enough peers ({}) connected to start consensus",
-                    state.connected_peers.len()
+                    peers_count = state.connected_peers.len(),
+                    "Start consensus."
                 );
 
                 start_height(co, state, metrics, state.driver.height()).await?;
@@ -446,7 +438,7 @@ where
         }
 
         GossipEvent::PeerDisconnected(peer_id) => {
-            info!("Disconnected from peer {peer_id}");
+            info!(%peer_id, "Disconnect from peer.");
 
             if state.connected_peers.remove(&peer_id) {
                 metrics.connected_peers.dec();
@@ -459,7 +451,7 @@ where
 
         GossipEvent::Message(from, msg) => {
             let Some(msg_height) = msg.msg_height() else {
-                trace!("Received message without height, dropping");
+                error!("Drop received message without height.");
                 return Ok(());
             };
 
@@ -467,13 +459,13 @@ where
             // Process messages received for the current height.
             // Drop all others.
             if state.driver.round() == Round::Nil {
-                debug!("Received gossip event at round -1, queuing for later");
+                debug!("Receive gossip event at round -1, queue for later");
 
                 state
                     .msg_queue
                     .push_back(Msg::GossipEvent(GossipEvent::Message(from, msg)));
             } else if state.driver.height() < msg_height {
-                debug!("Received gossip event for higher height, queuing for later");
+                debug!("Receive gossip event for higher height, queue for later");
 
                 state
                     .msg_queue
@@ -501,14 +493,13 @@ where
         GossipMsg::Vote(signed_vote) => {
             let validator_address = signed_vote.validator_address();
 
-            info!(%from, validator = %validator_address, "Received vote: {}", PrettyVote::<Ctx>(&signed_vote.vote));
+            debug!(peer_id = %from, %validator_address, vote=%PrettyVote::<Ctx>(&signed_vote.vote), "Receive vote.");
 
             if signed_vote.vote.height() != state.driver.height() {
                 warn!(
-                    %from, validator = %validator_address,
-                    "Ignoring vote for height {}, current height: {}",
-                    signed_vote.vote.height(),
-                    state.driver.height()
+                    peer_id=%from, validator = %validator_address,
+                    signed_vote_height=%signed_vote.vote.height(),
+                    "Ignore signed vote for different height."
                 );
 
                 return Ok(());
@@ -516,9 +507,9 @@ where
 
             let Some(validator) = state.driver.validator_set.get_by_address(validator_address)
             else {
-                warn!(
-                    %from, validator = %validator_address,
-                    "Received vote from unknown validator"
+                error!(
+                    peer_id = %from, %validator_address,
+                    "Receive vote from unknown validator."
                 );
 
                 return Ok(());
@@ -527,9 +518,9 @@ where
             let signed_msg = SignedMessage::Vote(signed_vote.clone());
             let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
             if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
-                warn!(
-                    %from, validator = %validator_address,
-                    "Received invalid vote: {}", PrettyVote::<Ctx>(&signed_vote.vote)
+                error!(
+                    peer_id=%from, %validator_address, vote=%PrettyVote::<Ctx>(&signed_vote.vote),
+                    "Receive invalid vote."
                 );
 
                 return Ok(());
@@ -548,10 +539,10 @@ where
         GossipMsg::Proposal(signed_proposal) => {
             let validator = signed_proposal.proposal.validator_address();
 
-            info!(%from, %validator, "Received proposal: {}", PrettyProposal::<Ctx>(&signed_proposal.proposal));
+            info!(peer_id=%from, validator_address=%validator, proposal = %PrettyProposal::<Ctx>(&signed_proposal.proposal), "Receive proposal.");
 
             let Some(validator) = state.driver.validator_set.get_by_address(validator) else {
-                warn!(%from, %validator, "Received proposal from unknown validator");
+                error!(peer_id=%from, validator_address=%validator, "Receive proposal from unknown validator.");
                 return Ok(());
             };
 
@@ -561,8 +552,8 @@ where
 
             if proposal_height != state.driver.height() {
                 warn!(
-                    "Ignoring proposal for height {proposal_height}, current height: {}",
-                    state.driver.height()
+                    %proposal_height,
+                    "Ignore proposal for different height."
                 );
 
                 return Ok(());
@@ -570,8 +561,8 @@ where
 
             if proposal_round != state.driver.round() {
                 warn!(
-                    "Ignoring proposal for round {proposal_round}, current round: {}",
-                    state.driver.round()
+                    %proposal_round,
+                    "Ignore proposal for different round."
                 );
 
                 return Ok(());
@@ -581,8 +572,8 @@ where
             let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
             if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
                 error!(
-                    "Received invalid signature for proposal: {}",
-                    PrettyProposal::<Ctx>(&signed_proposal.proposal)
+                    proposal = %PrettyProposal::<Ctx>(&signed_proposal.proposal),
+                    "Receive invalid signature."
                 );
 
                 return Ok(());
@@ -610,7 +601,7 @@ where
                     info!(
                         height = %proposal.height(),
                         round = %proposal.round(),
-                        "Received proposal before all block parts, storing it"
+                        "Store proposal received before all block parts."
                     );
 
                     // FIXME: Avoid mutating the driver state directly
@@ -624,14 +615,14 @@ where
 
             let Some(validator) = state.driver.validator_set.get_by_address(validator_address)
             else {
-                warn!(%from, %validator_address, "Received block part from unknown validator");
+                error!(peer_id=%from, %validator_address, "Receive block part from unknown validator.");
                 return Ok(());
             };
 
             let signed_msg = SignedMessage::BlockPart(signed_block_part.clone());
             let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
             if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
-                warn!(%from, validator = %validator_address, "Received invalid block part: {signed_block_part:?}");
+                error!(peer_id=%from, %validator_address, ?signed_block_part, "Receive invalid block part.");
                 return Ok(());
             }
 
@@ -657,14 +648,15 @@ where
 
     if timeout.round != round {
         debug!(
-            "Ignoring timeout for round {} at height {}, current round: {round}",
-            timeout.round, height
+            timeout_round = %timeout.round,
+            "Ignore timeout for different round.",
+
         );
 
         return Ok(());
     }
 
-    info!("{timeout} elapsed at height {height} and round {round}");
+    info!(%timeout, "Elapse timeout.");
 
     apply_driver_input(co, state, metrics, DriverInput::TimeoutElapsed(timeout)).await?;
 
@@ -692,7 +684,7 @@ where
         ..
     } = block;
 
-    info!(%height, %round, "Received block: {}", value.id());
+    info!(%height, %round, value=%value.id(), "Receive block.");
 
     // Store the block and validity information. It will be removed when a decision is reached for that height.
     state

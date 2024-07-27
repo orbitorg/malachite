@@ -136,7 +136,7 @@ where
             // The timer message was from canceled timer that was already enqueued in mailbox
             Entry::Vacant(entry) => {
                 let key = entry.key();
-                trace!("Received timer {key:?} that has been removed, discarding");
+                trace!(?key, "Discard removed timer.");
                 None
             }
 
@@ -145,9 +145,10 @@ where
                 let (key, timer) = (entry.key(), entry.get());
 
                 trace!(
-                    "Received timer {key:?} from old generation {}, expected generation {}, discarding",
-                    timer_msg.generation,
-                    timer.generation,
+                    ?key,
+                    received = timer_msg.generation,
+                    expected = timer.generation,
+                    "Discard received timer."
                 );
 
                 None

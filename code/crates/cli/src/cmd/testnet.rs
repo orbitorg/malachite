@@ -88,8 +88,9 @@ impl TestnetCmd {
             let node_home_dir = home_dir.join(i.to_string());
 
             info!(
-                "Generating configuration for node {i} at `{}`...",
-                node_home_dir.display()
+                node=i,
+                home=%node_home_dir.display(),
+                "Generating configuration."
             );
 
             // Set the destination folder

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use ractor::{Actor, ActorCell, ActorProcessingErr, ActorRef};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use malachite_common::{Context, Round, Timeout, TimeoutStep};
 use malachite_consensus::{Effect, GossipMsg, Resume, SignedMessage};
@@ -190,8 +190,8 @@ where
                     .process_msg(&myself, state, InnerMsg::ProposeValue(height, round, value))
                     .await;
 
-                if let Err(e) = result {
-                    error!("Error when processing ProposeValue message: {e:?}");
+                if let Err(error) = result {
+                    error!(%error, "Process ProposeValue message.");
                 }
 
                 Ok(())
@@ -206,8 +206,8 @@ where
                     )
                     .await;
 
-                if let Err(e) = result {
-                    error!("Error when processing GossipEvent message: {e:?}");
+                if let Err(error) = result {
+                    error!(%error, "Process GossipEvent message.");
                 }
 
                 Ok(())
@@ -225,8 +225,8 @@ where
                     .process_msg(&myself, state, InnerMsg::TimeoutElapsed(timeout))
                     .await;
 
-                if let Err(e) = result {
-                    error!("Error when processing TimeoutElapsed message: {e:?}");
+                if let Err(error) = result {
+                    error!(%error, "Process TimeoutElapsed message.");
                 }
 
                 Ok(())
@@ -237,8 +237,8 @@ where
                     .process_msg(&myself, state, InnerMsg::BlockReceived(block))
                     .await;
 
-                if let Err(e) = result {
-                    error!("Error when processing GossipEvent message: {e:?}");
+                if let Err(error) = result {
+                    error!(%error, "Process GossipEvent message.");
                 }
 
                 Ok(())
@@ -251,8 +251,8 @@ where
                     GossipMsg::BlockPart(signed_block_part),
                 );
 
-                if let Err(e) = self.gossip_consensus.cast(gossip_msg) {
-                    error!("Error when sending block part to gossip layer: {e:?}");
+                if let Err(error) = self.gossip_consensus.cast(gossip_msg) {
+                    error!(%error, "Send block part to gossip layer.");
                 }
 
                 Ok(())
@@ -363,8 +363,8 @@ where
 
             Effect::GetValue(height, round, timeout) => {
                 let timeout_duration = timeouts.duration_for(timeout.step);
-                if let Err(e) = self.get_value(myself, height, round, timeout_duration) {
-                    error!("Error when asking for value to be built: {e:?}");
+                if let Err(error) = self.get_value(myself, height, round, timeout_duration) {
+                    error!(%error, "Ask for value to be built.");
                 }
 
                 Ok(Resume::Continue)
@@ -502,9 +502,10 @@ where
         _myself: ActorRef<Self::Msg>,
         state: &mut State<Ctx>,
     ) -> Result<(), ActorProcessingErr> {
-        info!("Stopping...");
+        debug!("Stopping actor.");
 
         state.timers.cancel_all();
+        info!("Stopped actor.");
 
         Ok(())
     }

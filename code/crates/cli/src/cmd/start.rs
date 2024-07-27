@@ -1,6 +1,6 @@
 use clap::Parser;
 use color_eyre::eyre::Result;
-use tracing::{info, Instrument};
+use tracing::{info, trace};
 
 use malachite_node::config::{App, Config};
 use malachite_test::{Address, PrivateKey, ValidatorSet};
@@ -15,16 +15,15 @@ pub struct StartCmd;
 impl StartCmd {
     pub async fn run(&self, sk: PrivateKey, cfg: Config, vs: ValidatorSet) -> Result<()> {
         let val_address = Address::from_public_key(&sk.public_key());
-        let moniker = cfg.moniker.clone();
 
-        let span = tracing::error_span!("node", %moniker);
-        let _enter = span.enter();
+        info!(
+            validator_address = %val_address,
+            "Found validator address."
+        );
 
         if cfg.metrics.enabled {
-            tokio::spawn(metrics::serve(cfg.metrics.clone()).instrument(span.clone()));
+            tokio::spawn(metrics::serve(cfg.metrics.clone()));
         }
-
-        info!("Node is starting...");
 
         let (actor, handle) = match cfg.app {
             App::Starknet => spawn_node_actor(cfg, vs, sk.clone(), sk, val_address, None).await,
@@ -35,16 +34,15 @@ impl StartCmd {
             {
                 async move {
                     tokio::signal::ctrl_c().await.unwrap();
-                    info!("Shutting down...");
+                    info!("Termination signal received.");
                     actor.stop(None);
                 }
             }
-            .instrument(span.clone())
         });
 
         handle.await?;
 
-        info!("Node has stopped");
+        trace!("Node stopped.");
 
         Ok(())
     }

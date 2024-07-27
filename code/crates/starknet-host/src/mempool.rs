@@ -7,7 +7,7 @@ use malachite_proto::Protobuf;
 use ractor::{Actor, ActorCell, ActorProcessingErr, ActorRef, RpcReplyPort};
 use rand::distributions::Uniform;
 use rand::Rng;
-use tracing::{info, trace};
+use tracing::{debug, info, trace};
 
 use malachite_gossip_mempool::types::MempoolTransactionBatch;
 use malachite_gossip_mempool::{Channel, Event as GossipEvent, NetworkMsg, PeerId};
@@ -108,19 +108,16 @@ impl Mempool {
         state: &mut State,
     ) -> Result<(), ractor::ActorProcessingErr> {
         match event {
-            GossipEvent::Listening(addr) => {
-                info!("Listening on {addr}");
-            }
+            GossipEvent::Listening(_) => {}
             GossipEvent::PeerConnected(peer_id) => {
-                info!("Connected to peer {peer_id}");
+                debug!(%peer_id, "Connect to peer.");
             }
             GossipEvent::PeerDisconnected(peer_id) => {
-                info!("Disconnected from peer {peer_id}");
+                debug!(%peer_id, "Disconnect from peer.");
             }
             GossipEvent::Message(from, msg) => {
-                trace!(%from, "Received message of size {} bytes", msg.size_bytes());
+                trace!(%from, size = msg.size_bytes(), "Receive message.");
 
-                trace!(%from, "Received message");
                 self.handle_network_msg(from, msg.clone(), myself, state) // FIXME: Clone
                     .await?;
             }
@@ -228,7 +225,7 @@ impl Actor for Mempool {
         _myself: ActorRef<Self::Msg>,
         _state: &mut State,
     ) -> Result<(), ActorProcessingErr> {
-        info!("Stopping...");
+        info!("Stop actor.");
 
         Ok(())
     }

@@ -27,7 +27,7 @@ macro_rules! process {
                     let resume = match $handle {
                         Ok(resume) => resume,
                         Err(error) => {
-                            error!("Error when processing effect: {error:?}");
+                            error!(error, "Process effect.");
                             Resume::Continue
                         }
                     };

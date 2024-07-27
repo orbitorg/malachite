@@ -91,8 +91,8 @@ impl Actor for GossipMempool {
         let recv_task = tokio::spawn(
             async move {
                 while let Some(event) = recv_handle.recv().await {
-                    if let Err(e) = myself.cast(Msg::NewEvent(event)) {
-                        error!("Actor has died, stopping gossip mempool: {e:?}");
+                    if let Err(error) = myself.cast(Msg::NewEvent(event)) {
+                        error!(%error, "Stop mempool gossip, actor died.");
                         break;
                     }
                 }
@@ -140,8 +140,8 @@ impl Actor for GossipMempool {
                     Ok(bytes) => {
                         ctrl_handle.broadcast(channel, bytes).await?;
                     }
-                    Err(e) => {
-                        error!("Failed to serialize transaction batch: {e}");
+                    Err(error) => {
+                        error!(%error, "Serialize transaction batch.");
                     }
                 }
             }

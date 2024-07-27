@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use ractor::{Actor, ActorCell, ActorProcessingErr, ActorRef, SupervisionEvent};
 use tokio::task::JoinHandle;
-use tracing::{error, info, warn};
+use tracing::{debug, error, warn};
 
 use malachite_common::Context;
 
@@ -96,17 +96,17 @@ where
     ) -> Result<(), ActorProcessingErr> {
         match evt {
             SupervisionEvent::ActorStarted(cell) => {
-                info!("Actor {} has started", cell.get_id());
+                debug!(actor = %cell.get_id(), "Actor started.");
             }
             SupervisionEvent::ActorTerminated(cell, _state, reason) => {
                 warn!(
-                    "Actor {} has terminated: {}",
-                    cell.get_id(),
-                    reason.unwrap_or_default()
+                    actor = %cell.get_id(),
+                    reason = reason.unwrap_or_default(),
+                    "Actor terminated.",
                 );
             }
             SupervisionEvent::ActorFailed(cell, error) => {
-                error!("Actor {} has failed: {error}", cell.get_id());
+                error!(actor = %cell.get_id(), error, "Actor failed.");
             }
             SupervisionEvent::ProcessGroupChanged(_) => (),
         }

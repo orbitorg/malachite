@@ -82,7 +82,7 @@ impl StarknetHost {
         let last_part = block_parts.last().expect("block_parts is not empty");
 
         let Some(metadata) = last_part.metadata() else {
-            error!("Block is missing metadata");
+            error!("Block is missing metadata.");
             return None;
         };
 
@@ -90,7 +90,7 @@ impl StarknetHost {
         let expected_value = BlockHash::new(block_hasher.finalize().into());
 
         let valid = if received_value != expected_value {
-            error!("Invalid block received with value {received_value}, expected {expected_value}");
+            error!(%received_value, %expected_value, "Receive invalid block.");
             Validity::Invalid
         } else {
             Validity::Valid
@@ -159,7 +159,7 @@ impl StarknetHost {
                 %tx_count,
                 %block_size,
                 %num_parts,
-                "Received last block part",
+                "Receive last block part.",
             );
 
             self.build_value(&all_parts, height, round)
@@ -212,7 +212,7 @@ impl Actor for StarknetHost {
                 }
 
                 let block_hash = rx_hash.await?;
-                debug!("Got block with hash: {block_hash}");
+                debug!(%block_hash, "Create content.");
 
                 let block_parts = state.part_store.all_parts(height, round);
                 if let Some((value, ..)) = self.build_proposal_content(&block_parts, height, round)

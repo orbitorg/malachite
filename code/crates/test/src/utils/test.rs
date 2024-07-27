@@ -143,7 +143,7 @@ impl<const N: usize> Test<N> {
                 async move {
                     for height in START_HEIGHT.as_u64()..=END_HEIGHT.as_u64() {
                         if node_test.crashes_at(height) {
-                            info!("Faulty node has crashed");
+                            info!("Crash faulty node.");
                             actor_ref.kill();
                             break;
                         }
@@ -153,11 +153,11 @@ impl<const N: usize> Test<N> {
                         // TODO: Heights can go to higher rounds, therefore removing the round and value check for now.
                         match decision {
                             Some((h, _r, _)) if h == Height::new(height) /* && r == Round::new(0) */ => {
-                                info!("{height}/{HEIGHTS} correct decision");
+                                info!(height, HEIGHTS, "Correct decision.");
                                 correct_decisions.fetch_add(1, Ordering::Relaxed);
                             }
                             _ => {
-                                error!("{height}/{HEIGHTS} no decision")
+                                error!(height,HEIGHTS,"No decision.")
                             }
                         }
                     }

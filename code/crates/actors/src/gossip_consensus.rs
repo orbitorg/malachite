@@ -97,8 +97,8 @@ impl<Ctx: Context> Actor for GossipConsensus<Ctx> {
         let recv_task = tokio::spawn(
             async move {
                 while let Some(event) = recv_handle.recv().await {
-                    if let Err(e) = myself.cast(Msg::NewEvent(event)) {
-                        error!("Actor has died, stopping gossip consensus: {e:?}");
+                    if let Err(error) = myself.cast(Msg::NewEvent(event)) {
+                        error!(%error, "Stop consensus gossip, actor died.");
                         break;
                     }
                 }
