@@ -24,11 +24,11 @@ impl MockContext {
 
 impl Context for MockContext {
     type Address = Address;
-    type Height = Height;
     type BlockPart = BlockPart;
+    type Height = Height;
     type Proposal = Proposal;
-    type Validator = Validator;
     type ValidatorSet = ValidatorSet;
+    type Validator = Validator;
     type Value = ProposalContent;
     type Vote = Vote;
     type SigningScheme = SigningScheme;
@@ -37,6 +37,13 @@ impl Context for MockContext {
         use signature::Signer;
         let signature = self.private_key.sign(&vote.to_bytes());
         SignedVote::new(vote, signature)
+    }
+
+    fn verify_signed_vote(&self, signed_vote: &SignedVote<Self>, public_key: &PublicKey) -> bool {
+        use signature::Verifier;
+        public_key
+            .verify(&signed_vote.vote.to_bytes(), &signed_vote.signature)
+            .is_ok()
     }
 
     fn sign_proposal(&self, proposal: Self::Proposal) -> SignedProposal<Self> {
@@ -55,33 +62,6 @@ impl Context for MockContext {
             .verify(
                 &signed_proposal.proposal.to_bytes(),
                 &signed_proposal.signature,
-            )
-            .is_ok()
-    }
-
-    fn verify_signed_vote(&self, signed_vote: &SignedVote<Self>, public_key: &PublicKey) -> bool {
-        use signature::Verifier;
-        public_key
-            .verify(&signed_vote.vote.to_bytes(), &signed_vote.signature)
-            .is_ok()
-    }
-
-    fn sign_block_part(&self, block_part: Self::BlockPart) -> SignedBlockPart<Self> {
-        use signature::Signer;
-        let signature = self.private_key.sign(&block_part.to_bytes());
-        SignedBlockPart::new(block_part, signature)
-    }
-
-    fn verify_signed_block_part(
-        &self,
-        signed_block_part: &SignedBlockPart<Self>,
-        public_key: &malachite_common::PublicKey<Self>,
-    ) -> bool {
-        use signature::Verifier;
-        public_key
-            .verify(
-                &signed_block_part.block_part.to_bytes(),
-                &signed_block_part.signature,
             )
             .is_ok()
     }
@@ -112,5 +92,25 @@ impl Context for MockContext {
         address: Address,
     ) -> Vote {
         Vote::new_precommit(height, round, value_id, address)
+    }
+
+    fn sign_block_part(&self, block_part: Self::BlockPart) -> SignedBlockPart<Self> {
+        use signature::Signer;
+        let signature = self.private_key.sign(&block_part.to_bytes());
+        SignedBlockPart::new(block_part, signature)
+    }
+
+    fn verify_signed_block_part(
+        &self,
+        signed_block_part: &SignedBlockPart<Self>,
+        public_key: &malachite_common::PublicKey<Self>,
+    ) -> bool {
+        use signature::Verifier;
+        public_key
+            .verify(
+                &signed_block_part.block_part.to_bytes(),
+                &signed_block_part.signature,
+            )
+            .is_ok()
     }
 }
