@@ -22,7 +22,6 @@ impl MockContext {
     }
 }
 
-
 impl Context for MockContext {
     type Address = Address;
     type Height = Height;

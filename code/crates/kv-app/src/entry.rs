@@ -1,5 +1,4 @@
 /// Very basic data structure representing an entry in a KV store
-
 use std::str::FromStr;
 
 #[allow(dead_code)]

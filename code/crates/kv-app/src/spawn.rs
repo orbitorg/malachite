@@ -1,17 +1,16 @@
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use malachite_actors::consensus::Metrics;
 use malachite_actors::gossip_mempool::GossipMempoolRef;
-use malachite_actors::mempool::MempoolRef;
 use malachite_actors::node::{Node, NodeRef};
 use malachite_common::Round;
-use malachite_metrics::SharedRegistry;
+use malachite_metrics::{Metrics, SharedRegistry};
 use malachite_node::config::{Config as NodeConfig, MempoolConfig, TestConfig};
 use malachite_starknet_app::spawn::{
     spawn_consensus_actor, spawn_gossip_consensus_actor, spawn_gossip_mempool_actor,
     spawn_host_actor,
 };
+use malachite_starknet_host::mempool::MempoolRef;
 use malachite_starknet_host::mock::context::MockContext;
 use malachite_starknet_host::mock::types::{
     Address, Height, PrivateKey, ProposalContent, ValidatorSet,
@@ -72,7 +71,7 @@ pub async fn spawn_node_actor_kv(
         gossip_consensus,
         consensus,
         gossip_mempool,
-        mempool,
+        mempool.into(),
         host,
         start_height,
     );

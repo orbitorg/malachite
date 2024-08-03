@@ -5,8 +5,8 @@ use tracing::{info, Instrument};
 use malachite_node::config::{App, Config};
 use malachite_test::{Address, PrivateKey, ValidatorSet};
 
-use malachite_starknet_app::spawn::spawn_node_actor;
 use malachite_kv_app::spawn::spawn_node_actor_kv;
+use malachite_starknet_app::spawn::spawn_node_actor;
 
 use crate::metrics;
 

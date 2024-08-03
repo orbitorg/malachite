@@ -15,12 +15,12 @@ use tracing::{error, info, trace};
 
 use crate::entry::Entry;
 use malachite_actors::gossip_mempool::{GossipMempoolRef, Msg as GossipMempoolMsg};
-use malachite_actors::mempool::MempoolMsg;
-use malachite_actors::mempool::MempoolRef;
-use malachite_actors::util::forward;
-use malachite_common::Transaction;
+use malachite_actors::util::forward::forward;
+use malachite_common::proto::Protobuf;
 use malachite_gossip_mempool::{Event as GossipEvent, NetworkMsg, PeerId};
 use malachite_node::config::{MempoolConfig, TestConfig};
+use malachite_starknet_host::mempool::{MempoolMsg, MempoolRef};
+use malachite_starknet_host::mock::types::{Transaction, TransactionBatch};
 
 #[allow(dead_code)]
 pub struct KvMempool {
@@ -54,7 +54,7 @@ impl State {
 
     pub fn add_tx(&mut self, tx: &Transaction) {
         let mut hash = DefaultHasher::new();
-        tx.0.hash(&mut hash);
+        tx.hash(&mut hash);
         let key = hash.finish();
         self.transactions.entry(key).or_insert(tx.clone());
     }
@@ -137,9 +137,14 @@ impl KvMempool {
     ) -> Result<(), ractor::ActorProcessingErr> {
         match msg {
             NetworkMsg::TransactionBatch(batch) => {
+                let Ok(batch) = TransactionBatch::from_any(&batch.transaction_batch) else {
+                    // TODO: Log error
+                    return Ok(());
+                };
+
                 trace!(%from, "Received batch with {} transactions", batch.len());
 
-                for tx in batch.transaction_batch.into_transactions() {
+                for tx in batch.into_transactions() {
                     myself.cast(MempoolMsg::Input(tx))?;
                 }
             }

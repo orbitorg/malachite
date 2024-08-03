@@ -284,7 +284,7 @@ fn generate_and_broadcast_txes(
 
         transactions.push(tx);
     }
-    
+
     info!(
         "\t .. returning with transactions len={}",
         transactions.len()
