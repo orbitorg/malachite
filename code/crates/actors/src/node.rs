@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use ractor::{Actor, ActorCell, ActorProcessingErr, ActorRef, SupervisionEvent};
 use tokio::task::JoinHandle;
-use tracing::{trace, error, warn};
+use tracing::{error, trace, warn};
 
 use malachite_common::Context;
 

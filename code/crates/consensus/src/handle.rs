@@ -124,14 +124,13 @@ where
     Ctx: Context,
 {
     let pending_msgs = std::mem::take(&mut state.msg_queue);
-    info!(
-        msg_count = pending_msgs.len(),
-        "Replay messages for next height."
-    );
+    let msg_count = pending_msgs.len();
+    info!(msg_count, "Replay messages for next height.");
 
     for pending_msg in pending_msgs {
         handle_msg(co, state, metrics, pending_msg).await?;
     }
+    debug!(msg_count, "Replay messages finished.");
 
     Ok(())
 }
