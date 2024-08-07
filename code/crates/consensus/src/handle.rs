@@ -127,10 +127,12 @@ where
     let msg_count = pending_msgs.len();
     info!(msg_count, "Replay messages for next height.");
 
+    let start_replay = std::time::Instant::now();
     for pending_msg in pending_msgs {
         handle_msg(co, state, metrics, pending_msg).await?;
     }
-    debug!(msg_count, "Replay messages finished.");
+    let replay_time = start_replay.elapsed();
+    debug!(msg_count, ?replay_time, "Replay messages finished.");
 
     Ok(())
 }
@@ -215,7 +217,7 @@ where
 
     // If the step has changed, update the metrics
     if prev_step != new_step {
-        debug!(?prev_step, ?new_step, "Change step.");
+        debug!(?prev_step, step = ?new_step, "Change step.");
 
         metrics.step_end(prev_step);
         metrics.step_start(new_step);
@@ -313,7 +315,7 @@ where
         }
 
         DriverOutput::ScheduleTimeout(timeout) => {
-            debug!(%timeout, "Schedule timeout.");
+            debug!(round = %timeout.round, step = ?timeout.step, "Schedule timeout.");
 
             perform!(co, Effect::ScheduleTimeout(timeout));
 
@@ -458,13 +460,13 @@ where
             // Process messages received for the current height.
             // Drop all others.
             if state.driver.round() == Round::Nil {
-                debug!("Receive gossip event at round -1, queue for later");
+                debug!(height = %msg_height, "Receive gossip event at round -1, queue for later");
 
                 state
                     .msg_queue
                     .push_back(Msg::GossipEvent(GossipEvent::Message(from, msg)));
             } else if state.driver.height() < msg_height {
-                debug!("Receive gossip event for higher height, queue for later");
+                debug!(height = %msg_height, "Receive gossip event for higher height, queue for later");
 
                 state
                     .msg_queue
@@ -551,7 +553,7 @@ where
 
             if proposal_height != state.driver.height() {
                 warn!(
-                    %proposal_height,
+                    height = %proposal_height,
                     "Ignore proposal for different height."
                 );
 
@@ -560,7 +562,7 @@ where
 
             if proposal_round != state.driver.round() {
                 warn!(
-                    %proposal_round,
+                    round = %proposal_round,
                     "Ignore proposal for different round."
                 );
 
