@@ -315,50 +315,50 @@ module votekeeper {
         }
 
 
-pure def validCommit (commit: Set[Vote], commitWeight: Weight, keeper: Bookkeeper) : bool = 
-    val v = chooseSome(commit)
+pure def validQuorum (quorum: Set[Vote], quorumWeight: Weight, keeper: Bookkeeper) : bool = 
+    val v = chooseSome(quorum)
     all {
         v.valueId != Nil,
-        v.voteType == Precommit,
-        commit.forall(x => all {    x.height == v.height,
+        quorum.forall(x => all {    x.voteType == v.voteType,
+                                    x.height == v.height,
                                     x.round == v.round,
-                                    x.valueId == v.valueId,
-                                    x.voteType == Precommit}),
-        commitWeight > 2 / 3 * keeper.totalWeight, 
+                                    x.valueId == v.valueId,}),
+        quorumWeight > 2 / 3 * keeper.totalWeight, 
     }
 
-pure def commitRound (commit: Set[Vote]) : Round = chooseSome(commit).round
-pure def commitValue (commit: Set[Vote]) : Value = chooseSome(commit).valueId
+pure def quorumRound (quorum: Set[Vote]) : Round = chooseSome(quorum).round
+pure def quorumValue (quorum: Set[Vote]) : Value = chooseSome(quorum).valueId
+pure def quorumType (quorum: Set[Vote]) : VoteType = chooseSome(quorum).voteType
 
-pure def voteCountFromCommit (commit: Set[Vote], commitWeight: Weight) : VoteCount =
+pure def voteCountFromQuorum (quorum: Set[Vote], quorumWeight: Weight) : VoteCount =
     {
-        totalWeight: commitWeight,
-        valuesWeights: Map(commitValue(commit) -> commitWeight),
-        votesAddresses: commit.map(x => x.srcAddress),
-        receivedVotes: commit,
+        totalWeight: quorumWeight,
+        valuesWeights: Map(quorumValue(quorum) -> quorumWeight),
+        votesAddresses: quorum.map(x => x.srcAddress),
+        receivedVotes: quorum,
     }
 
 // This takes a commit, checks for evidence, and overwrites the roundVotes with the new commit
 // TODO: add test for applyCommit with/without evidence
 pure def applyCommit(keeper: Bookkeeper, commit: Set[Vote], commitWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
-    if (not(validCommit(commit, commitWeight, keeper)))
+    if (not(validQuorum(commit, commitWeight, keeper)) or commit.quorumType() != Precommit)
         { bookkeeper: keeper, output: NoVKOutput }
     else
         // getting the roundVotes that are touched by the commit
-        val round = commit.commitRound()
+        val round = commit.quorumRound() // TODO: in refactor check it is a commit
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
         // compute evidence
         val oldPrecommits = roundVotes.precommits.receivedVotes
         val doubleVotes = commit.filter(cv => oldPrecommits.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
         val newEvidence = doubleVotes.map(cv => Set(cv).union(oldPrecommits.filter(ov => cv.srcAddress == ov.srcAddress)))
         // overwrite roundvotes with commit
-        val newRoundVotes = roundVotes.with("precommits", voteCountFromCommit(commit, commitWeight))
-        val newRounds = keeper.rounds.set(commit.commitRound(), newRoundVotes)
+        val newRoundVotes = roundVotes.with("precommits", voteCountFromQuorum(commit, commitWeight))
+        val newRounds = keeper.rounds.set(commit.quorumRound(), newRoundVotes)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
                             .with("evidence", keeper.evidence.union(newEvidence))
                             .with("rounds", newRounds)
-        match commit.commitValue() {
+        match commit.quorumValue() {
             | Val(v) => { bookkeeper: newkeeper, output: PrecommitValueVKOutput((round, v)) }
             | Nil => { bookkeeper: keeper, output: NoVKOutput } // already done in validity check in the top-level if, but 
                                                                 // currently needed to have the match complete
