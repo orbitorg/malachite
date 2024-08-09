@@ -338,28 +338,42 @@ pure def voteCountFromQuorum (quorum: Set[Vote], quorumWeight: Weight) : VoteCou
         receivedVotes: quorum,
     }
 
+
+pure def roundVotesFromQuorum (quorum: Set[Vote], quorumWeight: Weight, roundVotes: RoundVotes) : (RoundVotes, Set[Set[Vote]]) = 
+    // compute evidence
+    val oldVotes = match quorum.quorumType() {
+        | Prevote => roundVotes.prevotes.receivedVotes
+        | Precommit => roundVotes.precommits.receivedVotes
+    } 
+    val doubleVotes = quorum.filter(cv => oldVotes.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
+    val newEvidence = doubleVotes.map(cv => Set(cv).union(oldVotes.filter(ov => cv.srcAddress == ov.srcAddress)))
+    match quorum.quorumType() {
+        | Prevote => (roundVotes.with("prevotes", voteCountFromQuorum(quorum, quorumWeight)), newEvidence)
+        | Precommit => (roundVotes.with("precommits", voteCountFromQuorum(quorum, quorumWeight)), newEvidence)
+    }
+
+
 // This takes a commit, checks for evidence, and overwrites the roundVotes with the new commit
 // TODO: add test for applyCommit with/without evidence
-pure def applyCommit(keeper: Bookkeeper, commit: Set[Vote], commitWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
-    if (not(validQuorum(commit, commitWeight, keeper)) or commit.quorumType() != Precommit)
+pure def applyQuorum(keeper: Bookkeeper, quorum: Set[Vote], quorumWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
+    if (not(validQuorum(quorum, quorumWeight, keeper)))
         { bookkeeper: keeper, output: NoVKOutput }
     else
         // getting the roundVotes that are touched by the commit
-        val round = commit.quorumRound() // TODO: in refactor check it is a commit
+        val round = quorum.quorumRound() // TODO: in refactor check it is a commit
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
-        // compute evidence
-        val oldPrecommits = roundVotes.precommits.receivedVotes
-        val doubleVotes = commit.filter(cv => oldPrecommits.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
-        val newEvidence = doubleVotes.map(cv => Set(cv).union(oldPrecommits.filter(ov => cv.srcAddress == ov.srcAddress)))
-        // overwrite roundvotes with commit
-        val newRoundVotes = roundVotes.with("precommits", voteCountFromQuorum(commit, commitWeight))
-        val newRounds = keeper.rounds.set(commit.quorumRound(), newRoundVotes)
+        // overwrite roundvotes with quorum
+        val rvEv = roundVotesFromQuorum(quorum, quorumWeight, roundVotes)
+        val newRounds = keeper.rounds.set(quorum.quorumRound(), rvEv._1)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
-                            .with("evidence", keeper.evidence.union(newEvidence))
+                            .with("evidence", keeper.evidence.union(rvEv._2))
                             .with("rounds", newRounds)
-        match commit.quorumValue() {
-            | Val(v) => { bookkeeper: newkeeper, output: PrecommitValueVKOutput((round, v)) }
+        match quorum.quorumValue() {
+            | Val(v) => match quorum.quorumType() {
+                            | Prevote => { bookkeeper: newkeeper, output: PolkaValueVKOutput((round, v)) }
+                            | Precommit =>  { bookkeeper: newkeeper, output: PrecommitValueVKOutput((round, v)) }
+                        }
             | Nil => { bookkeeper: keeper, output: NoVKOutput } // already done in validity check in the top-level if, but 
                                                                 // currently needed to have the match complete
         }
