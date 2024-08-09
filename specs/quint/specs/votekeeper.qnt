@@ -331,15 +331,13 @@ pure def quorumValue (quorum: Set[Vote]) : Value = chooseSome(quorum).valueId
 pure def quorumType (quorum: Set[Vote]) : VoteType = chooseSome(quorum).voteType
 
 pure def voteCountFromQuorum (quorum: Set[Vote], quorumWeight: Weight) : VoteCount =
-    {
-        totalWeight: quorumWeight,
+    {   totalWeight: quorumWeight,
         valuesWeights: Map(quorumValue(quorum) -> quorumWeight),
         votesAddresses: quorum.map(x => x.srcAddress),
         receivedVotes: quorum,
     }
 
-
-pure def roundVotesFromQuorum (quorum: Set[Vote], quorumWeight: Weight, roundVotes: RoundVotes) : (RoundVotes, Set[Set[Vote]]) = 
+pure def roundVotesAndEvidenceFromQuorum (quorum: Set[Vote], quorumWeight: Weight, roundVotes: RoundVotes) : (RoundVotes, Set[Set[Vote]]) = 
     // compute evidence
     val oldVotes = match quorum.quorumType() {
         | Prevote => roundVotes.prevotes.receivedVotes
@@ -363,7 +361,7 @@ pure def applyQuorum(keeper: Bookkeeper, quorum: Set[Vote], quorumWeight: Weight
         val round = quorum.quorumRound() // TODO: in refactor check it is a commit
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
         // overwrite roundvotes with quorum
-        val rvEv = roundVotesFromQuorum(quorum, quorumWeight, roundVotes)
+        val rvEv = roundVotesAndEvidenceFromQuorum(quorum, quorumWeight, roundVotes)
         val newRounds = keeper.rounds.set(quorum.quorumRound(), rvEv._1)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
