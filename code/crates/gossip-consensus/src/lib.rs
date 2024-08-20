@@ -11,14 +11,14 @@ use std::time::Duration;
 use futures::StreamExt;
 use libp2p::metrics::{Metrics, Recorder};
 use libp2p::swarm::{self, SwarmEvent};
-use libp2p::{gossipsub, identify, SwarmBuilder};
+use libp2p::{identify, SwarmBuilder};
 use tokio::sync::mpsc;
 use tracing::{debug, error, error_span, trace, Instrument};
 
 use malachite_metrics::SharedRegistry;
 
 pub use bytes::Bytes;
-pub use libp2p::gossipsub::MessageId;
+pub use gossipsub::MessageId;
 pub use libp2p::identity::Keypair;
 pub use libp2p::{Multiaddr, PeerId};
 
@@ -227,9 +227,7 @@ async fn handle_swarm_event(
     state: &mut State,
     tx_event: &mpsc::Sender<Event>,
 ) -> ControlFlow<()> {
-    if let SwarmEvent::Behaviour(NetworkEvent::GossipSub(e)) = &event {
-        metrics.record(e);
-    } else if let SwarmEvent::Behaviour(NetworkEvent::Identify(e)) = &event {
+    if let SwarmEvent::Behaviour(NetworkEvent::Identify(e)) = &event {
         metrics.record(e);
     }
 

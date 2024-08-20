@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{gossipsub, identify, ping};
+use libp2p::{identify, ping};
 
 pub use libp2p::identity::Keypair;
 pub use libp2p::{Multiaddr, PeerId};

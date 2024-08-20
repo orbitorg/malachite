@@ -1,7 +1,7 @@
 use std::time::Duration;
 
+use libp2p::identify;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{gossipsub, identify};
 
 use malachite_metrics::Registry;
 
