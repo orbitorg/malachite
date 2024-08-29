@@ -3,7 +3,7 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use core::fmt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ops::ControlFlow;
 use std::time::Duration;
@@ -11,7 +11,8 @@ use std::time::Duration;
 use futures::StreamExt;
 use libp2p::metrics::{Metrics, Recorder};
 use libp2p::swarm::{self, SwarmEvent};
-use libp2p::{gossipsub, identify, SwarmBuilder};
+use libp2p::{gossipsub, identify, request_response, SwarmBuilder};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, error, error_span, trace, Instrument};
 
@@ -24,13 +25,14 @@ pub use libp2p::{Multiaddr, PeerId};
 
 pub mod behaviour;
 pub mod handle;
+pub mod pubsub;
 
-use behaviour::{Behaviour, NetworkEvent};
+use behaviour::{Behaviour, NetworkEvent, ReqResEvent, Request, Response};
 use handle::Handle;
 
 const METRICS_PREFIX: &str = "malachite_gossip_consensus";
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Channel {
     Consensus,
     ProposalParts,
@@ -77,6 +79,23 @@ impl fmt::Display for Channel {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub enum NetworkType {
+    #[default]
+    GossipSub,
+    Broadcast,
+}
+
+impl NetworkType {
+    pub fn is_gossip_sub(&self) -> bool {
+        matches!(self, Self::GossipSub)
+    }
+
+    pub fn is_broadcast(&self) -> bool {
+        matches!(self, Self::Broadcast)
+    }
+}
+
 const PROTOCOL_VERSION: &str = "malachite-gossip-consensus/v1beta1";
 
 pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
@@ -86,6 +105,7 @@ pub struct Config {
     pub listen_addr: Multiaddr,
     pub persistent_peers: Vec<Multiaddr>,
     pub idle_connection_timeout: Duration,
+    pub network_type: NetworkType,
 }
 
 impl Config {
@@ -98,7 +118,7 @@ impl Config {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
     Listening(Multiaddr),
-    Message(Channel, PeerId, MessageId, Bytes),
+    Message(Channel, PeerId, Bytes),
     PeerConnected(PeerId),
     PeerDisconnected(PeerId),
 }
@@ -112,6 +132,17 @@ pub enum CtrlMsg {
 #[derive(Debug, Default)]
 pub struct State {
     pub peers: HashMap<PeerId, identify::Info>,
+    pub subscribers: HashMap<Channel, HashSet<PeerId>>,
+}
+
+impl State {
+    pub fn add_subscriber(&mut self, channel: Channel, peer_id: PeerId) {
+        self.subscribers.entry(channel).or_default().insert(peer_id);
+    }
+
+    pub fn subscribers(&mut self, channel: Channel) -> &HashSet<PeerId> {
+        self.subscribers.entry(channel).or_default()
+    }
 }
 
 pub async fn spawn(
@@ -119,18 +150,16 @@ pub async fn spawn(
     config: Config,
     registry: SharedRegistry,
 ) -> Result<Handle, BoxError> {
-    let mut swarm = registry.with_prefix(METRICS_PREFIX, |registry| -> Result<_, BoxError> {
+    let swarm = registry.with_prefix(METRICS_PREFIX, |registry| -> Result<_, BoxError> {
         Ok(SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
             .with_quic()
             .with_dns()?
             .with_bandwidth_metrics(registry)
-            .with_behaviour(|kp| Behaviour::new_with_metrics(kp, registry))?
+            .with_behaviour(|kp| Behaviour::new_with_metrics(config.network_type, kp, registry))?
             .with_swarm_config(|cfg| config.apply(cfg))
             .build())
     })?;
-
-    swarm.behaviour_mut().subscribe(Channel::all())?;
 
     let metrics = registry.with_prefix(METRICS_PREFIX, Metrics::new);
 
@@ -157,7 +186,7 @@ async fn run(
         return;
     };
 
-    for persistent_peer in config.persistent_peers {
+    for persistent_peer in &config.persistent_peers {
         trace!("Dialing persistent peer: {persistent_peer}");
 
         match swarm.dial(persistent_peer.clone()) {
@@ -166,16 +195,21 @@ async fn run(
         }
     }
 
+    // In GossipSub mode, we can subscribe to a topic before discovering peers
+    if config.network_type.is_gossip_sub() {
+        pubsub::subscribe(&mut swarm, Channel::all()).unwrap(); // FIXME: unwrap
+    }
+
     let mut state = State::default();
 
     loop {
         let result = tokio::select! {
             event = swarm.select_next_some() => {
-                handle_swarm_event(event, &metrics, &mut swarm, &mut state, &tx_event).await
+                handle_swarm_event(event, &config, &metrics, &mut swarm, &mut state, &tx_event).await
             }
 
             Some(ctrl) = rx_ctrl.recv() => {
-                handle_ctrl_msg(ctrl, &mut swarm).await
+                handle_ctrl_msg(ctrl, &mut swarm, &mut state).await
             }
         };
 
@@ -186,12 +220,15 @@ async fn run(
     }
 }
 
-async fn handle_ctrl_msg(msg: CtrlMsg, swarm: &mut swarm::Swarm<Behaviour>) -> ControlFlow<()> {
+async fn handle_ctrl_msg(
+    msg: CtrlMsg,
+    swarm: &mut swarm::Swarm<Behaviour>,
+    state: &mut State,
+) -> ControlFlow<()> {
     match msg {
         CtrlMsg::BroadcastMsg(channel, data) => {
             let msg_size = data.len();
-
-            let result = swarm.behaviour_mut().publish(channel, data);
+            let result = pubsub::publish(swarm, state, channel, data);
 
             match result {
                 Ok(()) => debug!(%channel, "Broadcasted message ({msg_size} bytes)"),
@@ -207,8 +244,9 @@ async fn handle_ctrl_msg(msg: CtrlMsg, swarm: &mut swarm::Swarm<Behaviour>) -> C
 
 async fn handle_swarm_event(
     event: SwarmEvent<NetworkEvent>,
+    config: &Config,
     metrics: &Metrics,
-    _swarm: &mut swarm::Swarm<Behaviour>,
+    swarm: &mut swarm::Swarm<Behaviour>,
     state: &mut State,
     tx_event: &mpsc::Sender<Event>,
 ) -> ControlFlow<()> {
@@ -251,6 +289,11 @@ async fn handle_swarm_event(
                 );
 
                 state.peers.insert(peer_id, info);
+
+                if config.network_type.is_broadcast() {
+                    // If broadcast mode, we need to know the peer before can can subscribe to a topic
+                    pubsub::subscribe_to_peer(swarm, &peer_id, Channel::all()).unwrap();
+                }
             } else {
                 trace!(
                     "Peer {peer_id} is using incompatible protocol version: {:?}",
@@ -274,7 +317,11 @@ async fn handle_swarm_event(
         }
 
         SwarmEvent::Behaviour(NetworkEvent::GossipSub(event)) => {
-            return handle_gossipsub_event(event, metrics, _swarm, state, tx_event).await;
+            return handle_gossipsub_event(event, metrics, swarm, state, tx_event).await;
+        }
+
+        SwarmEvent::Behaviour(NetworkEvent::RequestResponse(event)) => {
+            return handle_request_response_event(event, metrics, swarm, state, tx_event).await;
         }
 
         swarm_event => {
@@ -345,7 +392,7 @@ async fn handle_gossipsub_event(
                 message.data.len()
             );
 
-            let event = Event::Message(channel, peer_id, message_id, Bytes::from(message.data));
+            let event = Event::Message(channel, peer_id, Bytes::from(message.data));
 
             if let Err(e) = tx_event.send(event).await {
                 error!("Error sending message to handle: {e}");
@@ -354,6 +401,73 @@ async fn handle_gossipsub_event(
         }
         gossipsub::Event::GossipsubNotSupported { peer_id } => {
             trace!("Peer {peer_id} does not support GossipSub");
+        }
+    }
+
+    ControlFlow::Continue(())
+}
+
+async fn handle_request_response_event(
+    event: ReqResEvent,
+    _metrics: &Metrics,
+    swarm: &mut swarm::Swarm<Behaviour>,
+    state: &mut State,
+    tx_event: &mpsc::Sender<Event>,
+) -> ControlFlow<()> {
+    match event {
+        ReqResEvent::Message { peer, message } => match message {
+            request_response::Message::Request {
+                request,
+                channel: reply_channel,
+                ..
+            } => match request {
+                Request::Subscribe(channel) => {
+                    trace!("Peer {peer} requested to subscribe to {channel}");
+
+                    tx_event.send(Event::PeerConnected(peer)).await.unwrap(); // FIXME: unwrap
+                    state.add_subscriber(channel, peer);
+                    pubsub::reply(swarm, reply_channel, Response::Ok).unwrap(); // FIXME: unwrap
+                }
+
+                Request::Publish(channel, data) => {
+                    trace!("Peer {peer} published to {channel}");
+
+                    tx_event
+                        .send(Event::Message(channel, peer, Bytes::from(data)))
+                        .await
+                        .unwrap(); // FIXME: unwrap
+
+                    pubsub::reply(swarm, reply_channel, Response::Ok).unwrap(); // FIXME: unwrap
+                }
+            },
+
+            request_response::Message::Response {
+                request_id,
+                response,
+            } => match response {
+                Response::Ok => trace!("Received OK to request {request_id}"),
+                Response::Error(error) => error!("Received error to request {request_id}: {error}"),
+            },
+        },
+
+        ReqResEvent::OutboundFailure {
+            peer,
+            request_id,
+            error,
+        } => {
+            trace!("Outbound request {request_id} failed to {peer}: {error}");
+        }
+
+        ReqResEvent::InboundFailure {
+            peer,
+            request_id,
+            error,
+        } => {
+            trace!("Inbound request {request_id} failed from {peer}: {error}");
+        }
+
+        ReqResEvent::ResponseSent { peer, request_id } => {
+            trace!("Response sent to {peer} for request {request_id}");
         }
     }
 

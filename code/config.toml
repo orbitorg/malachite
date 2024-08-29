@@ -72,6 +72,12 @@ timeout_commit = "0s"
 listen_addr = "/ip4/0.0.0.0/udp/0/quic-v1"
 # List of nodes to keep persistent connections to
 persistent_peers = []
+# The type of network to use for consensus
+# Possible values:
+# - "gossipsub": Use the GossipSub v1.1 protocol
+# - "broadcast": Use full-mesh broadcast (no gossip)
+# Override with MALACHITE__CONSENSUS__P2P__NETWORK env variable
+network = "gossipsub"
 
 
 #######################################################

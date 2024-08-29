@@ -1,18 +1,67 @@
 use std::time::Duration;
 
-use bytes::Bytes;
+use libp2p::request_response::ProtocolSupport;
 use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
-use libp2p::{gossipsub, identify, ping};
+use libp2p::StreamProtocol;
+use libp2p::{gossipsub, identify, ping, request_response};
+use serde::{Deserialize, Serialize};
 
 pub use libp2p::identity::Keypair;
 pub use libp2p::{Multiaddr, PeerId};
 
 use malachite_metrics::Registry;
 
-use crate::{BoxError, Channel, PROTOCOL_VERSION};
+use crate::{Channel, NetworkType, PROTOCOL_VERSION};
 
 const MAX_TRANSMIT_SIZE: usize = 4 * 1024 * 1024; // 4 MiB
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Request {
+    Subscribe(Channel),
+    Publish(Channel, Vec<u8>),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Response {
+    Ok,
+    Error(String),
+}
+
+pub type ReqResEvent = request_response::Event<Request, Response>;
+pub type ReqResBehaviour = request_response::cbor::Behaviour<Request, Response>;
+
+#[derive(Debug)]
+pub enum NetworkEvent {
+    Identify(identify::Event),
+    Ping(ping::Event),
+    GossipSub(gossipsub::Event),
+    RequestResponse(ReqResEvent),
+}
+
+impl From<identify::Event> for NetworkEvent {
+    fn from(event: identify::Event) -> Self {
+        Self::Identify(event)
+    }
+}
+
+impl From<ping::Event> for NetworkEvent {
+    fn from(event: ping::Event) -> Self {
+        Self::Ping(event)
+    }
+}
+
+impl From<gossipsub::Event> for NetworkEvent {
+    fn from(event: gossipsub::Event) -> Self {
+        Self::GossipSub(event)
+    }
+}
+
+impl From<ReqResEvent> for NetworkEvent {
+    fn from(event: ReqResEvent) -> Self {
+        Self::RequestResponse(event)
+    }
+}
 
 #[derive(NetworkBehaviour)]
 #[behaviour(to_swarm = "NetworkEvent")]
@@ -20,6 +69,7 @@ pub struct Behaviour {
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
     pub gossipsub: Toggle<gossipsub::Behaviour>,
+    pub request_response: Toggle<ReqResBehaviour>,
 }
 
 fn message_id(message: &gossipsub::Message) -> gossipsub::MessageId {
@@ -49,14 +99,10 @@ fn gossipsub_config() -> gossipsub::Config {
 }
 
 impl Behaviour {
-    pub fn new_with_metrics(keypair: &Keypair, registry: &mut Registry) -> Self {
-        Self {
-            identify: identify::Behaviour::new(identify::Config::new(
-                PROTOCOL_VERSION.to_string(),
-                keypair.public(),
-            )),
-            ping: ping::Behaviour::new(ping::Config::new().with_interval(Duration::from_secs(5))),
-            gossipsub: Toggle::from(Some(
+    pub fn new_with_metrics(tpe: NetworkType, keypair: &Keypair, registry: &mut Registry) -> Self {
+        let gossipsub = match tpe {
+            NetworkType::Broadcast => None,
+            NetworkType::GossipSub => Some(
                 gossipsub::Behaviour::new_with_metrics(
                     gossipsub::MessageAuthenticity::Signed(keypair.clone()),
                     gossipsub_config(),
@@ -64,50 +110,32 @@ impl Behaviour {
                     Default::default(),
                 )
                 .unwrap(),
+            ),
+        };
+
+        let request_response = match tpe {
+            NetworkType::GossipSub => None,
+            NetworkType::Broadcast => Some(request_response::cbor::Behaviour::new(
+                [(
+                    StreamProtocol::new("/malachite-broadcast-consensus/v1beta1"),
+                    ProtocolSupport::Full,
+                )],
+                request_response::Config::default(),
             )),
+        };
+
+        let identify = identify::Behaviour::new(identify::Config::new(
+            PROTOCOL_VERSION.to_string(),
+            keypair.public(),
+        ));
+
+        let ping = ping::Behaviour::new(ping::Config::new().with_interval(Duration::from_secs(5)));
+
+        Self {
+            identify,
+            ping,
+            gossipsub: Toggle::from(gossipsub),
+            request_response: Toggle::from(request_response),
         }
-    }
-
-    pub fn subscribe(&mut self, channels: &[Channel]) -> Result<(), BoxError> {
-        if let Some(gs) = self.gossipsub.as_mut() {
-            for channel in channels {
-                gs.subscribe(&channel.to_topic())?;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn publish(&mut self, channel: Channel, data: Bytes) -> Result<(), BoxError> {
-        if let Some(gs) = self.gossipsub.as_mut() {
-            gs.publish(channel.topic_hash(), data)?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub enum NetworkEvent {
-    Identify(identify::Event),
-    Ping(ping::Event),
-    GossipSub(gossipsub::Event),
-}
-
-impl From<identify::Event> for NetworkEvent {
-    fn from(event: identify::Event) -> Self {
-        Self::Identify(event)
-    }
-}
-
-impl From<ping::Event> for NetworkEvent {
-    fn from(event: ping::Event) -> Self {
-        Self::Ping(event)
-    }
-}
-
-impl From<gossipsub::Event> for NetworkEvent {
-    fn from(event: gossipsub::Event) -> Self {
-        Self::GossipSub(event)
     }
 }
