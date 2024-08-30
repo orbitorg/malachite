@@ -1,3 +1,4 @@
+use either::Either;
 use libp2p::request_response::ResponseChannel;
 use libp2p::swarm;
 
@@ -13,9 +14,9 @@ pub fn subscribe(
     swarm: &mut swarm::Swarm<Behaviour>,
     channels: &[Channel],
 ) -> Result<(), BoxError> {
-    if let Some(gs) = swarm.behaviour_mut().gossipsub.as_mut() {
+    if let Either::Left(gossipsub) = &mut swarm.behaviour_mut().pubsub {
         for channel in channels {
-            gs.subscribe(&channel.to_topic())?;
+            gossipsub.subscribe(&channel.to_topic())?;
         }
     }
 
@@ -27,9 +28,9 @@ pub fn subscribe_to_peer(
     peer: &PeerId,
     channels: &[Channel],
 ) -> Result<(), BoxError> {
-    if let Some(rr) = swarm.behaviour_mut().request_response.as_mut() {
+    if let Either::Right(rpc) = &mut swarm.behaviour_mut().pubsub {
         for channel in channels {
-            let _request_id = rr.send_request(peer, Request::Subscribe(*channel));
+            let _request_id = rpc.send_request(peer, Request::Subscribe(*channel));
         }
     }
 
@@ -42,19 +43,18 @@ pub fn publish(
     channel: Channel,
     data: Bytes,
 ) -> Result<(), BoxError> {
-    if let Some(gs) = swarm.behaviour_mut().gossipsub.as_mut() {
-        gs.publish(channel.topic_hash(), data)?;
-        return Ok(());
-    }
-
-    if let Some(rr) = swarm.behaviour_mut().request_response.as_mut() {
-        for peer in state.subscribers(channel) {
-            let _request_id = rr.send_request(peer, Request::Publish(channel, data.to_vec()));
+    match &mut swarm.behaviour_mut().pubsub {
+        Either::Left(gossipsub) => {
+            gossipsub.publish(channel.topic_hash(), data)?;
         }
-        return Ok(());
+        Either::Right(rpc) => {
+            for peer in state.subscribers(channel) {
+                let _request_id = rpc.send_request(peer, Request::Publish(channel, data.to_vec()));
+            }
+        }
     }
 
-    Err("No gossipsub or broadcast protocol enabled".into())
+    Ok(())
 }
 
 pub fn reply(
@@ -62,8 +62,8 @@ pub fn reply(
     reply: ResponseChannel<Response>,
     response: Response,
 ) -> Result<(), BoxError> {
-    if let Some(rr) = swarm.behaviour_mut().request_response.as_mut() {
-        rr.send_response(reply, response).unwrap(); // FIXME: unwrap
+    if let Either::Right(rpc) = &mut swarm.behaviour_mut().pubsub {
+        rpc.send_response(reply, response).unwrap(); // FIXME: unwrap
     }
 
     Ok(())

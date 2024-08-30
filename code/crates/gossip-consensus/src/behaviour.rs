@@ -1,7 +1,7 @@
 use std::time::Duration;
 
+use either::Either;
 use libp2p::request_response::ProtocolSupport;
-use libp2p::swarm::behaviour::toggle::Toggle;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::StreamProtocol;
 use libp2p::{gossipsub, identify, ping, request_response};
@@ -51,15 +51,12 @@ impl From<ping::Event> for NetworkEvent {
     }
 }
 
-impl From<gossipsub::Event> for NetworkEvent {
-    fn from(event: gossipsub::Event) -> Self {
-        Self::GossipSub(event)
-    }
-}
-
-impl From<ReqResEvent> for NetworkEvent {
-    fn from(event: ReqResEvent) -> Self {
-        Self::RequestResponse(event)
+impl From<Either<gossipsub::Event, ReqResEvent>> for NetworkEvent {
+    fn from(event: Either<gossipsub::Event, ReqResEvent>) -> Self {
+        match event {
+            Either::Left(event) => Self::GossipSub(event),
+            Either::Right(event) => Self::RequestResponse(event),
+        }
     }
 }
 
@@ -68,8 +65,7 @@ impl From<ReqResEvent> for NetworkEvent {
 pub struct Behaviour {
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
-    pub gossipsub: Toggle<gossipsub::Behaviour>,
-    pub request_response: Toggle<ReqResBehaviour>,
+    pub pubsub: Either<gossipsub::Behaviour, ReqResBehaviour>,
 }
 
 fn message_id(message: &gossipsub::Message) -> gossipsub::MessageId {
@@ -100,9 +96,15 @@ fn gossipsub_config() -> gossipsub::Config {
 
 impl Behaviour {
     pub fn new_with_metrics(tpe: NetworkType, keypair: &Keypair, registry: &mut Registry) -> Self {
-        let gossipsub = match tpe {
-            NetworkType::Broadcast => None,
-            NetworkType::GossipSub => Some(
+        let identify = identify::Behaviour::new(identify::Config::new(
+            PROTOCOL_VERSION.to_string(),
+            keypair.public(),
+        ));
+
+        let ping = ping::Behaviour::new(ping::Config::new().with_interval(Duration::from_secs(5)));
+
+        let pubsub = match tpe {
+            NetworkType::GossipSub => Either::Left(
                 gossipsub::Behaviour::new_with_metrics(
                     gossipsub::MessageAuthenticity::Signed(keypair.clone()),
                     gossipsub_config(),
@@ -111,11 +113,7 @@ impl Behaviour {
                 )
                 .unwrap(),
             ),
-        };
-
-        let request_response = match tpe {
-            NetworkType::GossipSub => None,
-            NetworkType::Broadcast => Some(request_response::cbor::Behaviour::new(
+            NetworkType::Broadcast => Either::Right(request_response::cbor::Behaviour::new(
                 [(
                     StreamProtocol::new("/malachite-broadcast-consensus/v1beta1"),
                     ProtocolSupport::Full,
@@ -124,18 +122,10 @@ impl Behaviour {
             )),
         };
 
-        let identify = identify::Behaviour::new(identify::Config::new(
-            PROTOCOL_VERSION.to_string(),
-            keypair.public(),
-        ));
-
-        let ping = ping::Behaviour::new(ping::Config::new().with_interval(Duration::from_secs(5)));
-
         Self {
             identify,
             ping,
-            gossipsub: Toggle::from(gossipsub),
-            request_response: Toggle::from(request_response),
+            pubsub,
         }
     }
 }

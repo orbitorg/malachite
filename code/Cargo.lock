@@ -2283,6 +2283,7 @@ name = "malachite-gossip-consensus"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "either",
  "futures",
  "libp2p",
  "malachite-metrics",
