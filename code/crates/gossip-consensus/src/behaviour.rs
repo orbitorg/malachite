@@ -39,11 +39,21 @@ impl From<gossipsub::Event> for NetworkEvent {
     }
 }
 
-impl From<Either<gossipsub::Event, floodsub::FloodsubEvent>> for NetworkEvent {
-    fn from(event: Either<gossipsub::Event, floodsub::FloodsubEvent>) -> Self {
+impl From<floodsub::FloodsubEvent> for NetworkEvent {
+    fn from(event: floodsub::FloodsubEvent) -> Self {
+        Self::FloodSub(event)
+    }
+}
+
+impl<A, B> From<Either<A, B>> for NetworkEvent
+where
+    A: Into<NetworkEvent>,
+    B: Into<NetworkEvent>,
+{
+    fn from(event: Either<A, B>) -> Self {
         match event {
-            Either::Left(event) => Self::GossipSub(event),
-            Either::Right(event) => Self::FloodSub(event),
+            Either::Left(event) => event.into(),
+            Either::Right(event) => event.into(),
         }
     }
 }
