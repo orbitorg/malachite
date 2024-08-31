@@ -225,7 +225,7 @@ async fn handle_swarm_event(
 
                 state.peers.insert(peer_id, info);
 
-                pubsub::subscribe(swarm, Channel::all()).unwrap(); // FIXME: unwrap
+                pubsub::add_peer(swarm, peer_id).unwrap(); // FIXME: unwrap
             } else {
                 trace!(
                     "Peer {peer_id} is using incompatible protocol version: {:?}",
@@ -347,7 +347,7 @@ async fn handle_floodsub_event(
 ) -> ControlFlow<()> {
     use floodsub::FloodsubEvent;
 
-    match dbg!(event) {
+    match event {
         FloodsubEvent::Subscribed { peer_id, topic } => {
             if !Channel::has_floodsub_topic(&topic) {
                 trace!("Peer {peer_id} tried to subscribe to unknown topic: {topic:?}");

@@ -1,9 +1,17 @@
 use bytes::Bytes;
 use either::Either;
-use libp2p::swarm;
+use libp2p::{swarm, PeerId};
 
 use crate::behaviour::Behaviour;
 use crate::{BoxError, Channel};
+
+pub fn add_peer(swarm: &mut swarm::Swarm<Behaviour>, peer_id: PeerId) -> Result<(), BoxError> {
+    if let Either::Right(floodsub) = &mut swarm.behaviour_mut().pubsub {
+        floodsub.add_node_to_partial_view(peer_id);
+    }
+
+    Ok(())
+}
 
 pub fn subscribe(
     swarm: &mut swarm::Swarm<Behaviour>,
