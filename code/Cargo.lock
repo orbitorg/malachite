@@ -1788,8 +1788,7 @@ checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 [[package]]
 name = "libp2p"
 version = "0.54.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbe80f9c7e00526cd6b838075b9c171919404a4732cb2fa8ece0a093223bfc4"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "bytes",
  "either",
@@ -1820,9 +1819,8 @@ dependencies = [
 
 [[package]]
 name = "libp2p-allow-block-list"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1027ccf8d70320ed77e984f273bc8ce952f623762cb9bf2d126df73caef8041"
+version = "0.4.1"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "libp2p-core",
  "libp2p-identity",
@@ -1833,8 +1831,7 @@ dependencies = [
 [[package]]
 name = "libp2p-connection-limits"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d003540ee8baef0d254f7b6bfd79bac3ddf774662ca0abf69186d517ef82ad8"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "libp2p-core",
  "libp2p-identity",
@@ -1845,8 +1842,7 @@ dependencies = [
 [[package]]
 name = "libp2p-core"
 version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a61f26c83ed111104cd820fe9bc3aaabbac5f1652a1d213ed6e900b7918a1298"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "either",
  "fnv",
@@ -1873,8 +1869,7 @@ dependencies = [
 [[package]]
 name = "libp2p-dns"
 version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97f37f30d5c7275db282ecd86e54f29dd2176bd3ac656f06abf43bedb21eb8bd"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "async-trait",
  "futures",
@@ -1889,8 +1884,7 @@ dependencies = [
 [[package]]
 name = "libp2p-floodsub"
 version = "0.45.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f5972ab76f83804f4e4e57f8d555fd64b5e9eecf31c25afdaf50c75918301a1"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "asynchronous-codec",
  "bytes",
@@ -1911,8 +1905,7 @@ dependencies = [
 [[package]]
 name = "libp2p-gossipsub"
 version = "0.47.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4e830fdf24ac8c444c12415903174d506e1e077fbe3875c404a78c5935a8543"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "asynchronous-codec",
  "base64 0.22.1",
@@ -1942,8 +1935,7 @@ dependencies = [
 [[package]]
 name = "libp2p-identify"
 version = "0.45.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1711b004a273be4f30202778856368683bd9a83c4c7dcc8f848847606831a4e3"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "asynchronous-codec",
  "either",
@@ -1965,8 +1957,7 @@ dependencies = [
 [[package]]
 name = "libp2p-identity"
 version = "0.2.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55cca1eb2bc1fd29f099f3daaab7effd01e1a54b7c577d0ed082521034d912e8"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "bs58",
  "ed25519-dalek",
@@ -1986,8 +1977,7 @@ dependencies = [
 [[package]]
 name = "libp2p-mdns"
 version = "0.46.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14b8546b6644032565eb29046b42744aee1e9f261ed99671b2c93fb140dba417"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "data-encoding",
  "futures",
@@ -2007,8 +1997,7 @@ dependencies = [
 [[package]]
 name = "libp2p-metrics"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77ebafa94a717c8442d8db8d3ae5d1c6a15e30f2d347e0cd31d057ca72e42566"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "futures",
  "libp2p-core",
@@ -2025,8 +2014,7 @@ dependencies = [
 [[package]]
 name = "libp2p-ping"
 version = "0.45.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "005a34420359223b974ee344457095f027e51346e992d1e0dcd35173f4cdd422"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "either",
  "futures",
@@ -2043,8 +2031,7 @@ dependencies = [
 [[package]]
 name = "libp2p-quic"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46352ac5cd040c70e88e7ff8257a2ae2f891a4076abad2c439584a31c15fd24e"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "bytes",
  "futures",
@@ -2067,8 +2054,7 @@ dependencies = [
 [[package]]
 name = "libp2p-request-response"
 version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1356c9e376a94a75ae830c42cdaea3d4fe1290ba409a22c809033d1b7dcab0a6"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "async-trait",
  "cbor4ii",
@@ -2089,8 +2075,7 @@ dependencies = [
 [[package]]
 name = "libp2p-swarm"
 version = "0.45.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7dd6741793d2c1fb2088f67f82cf07261f25272ebe3c0b0c311e0c6b50e851a"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "either",
  "fnv",
@@ -2113,8 +2098,7 @@ dependencies = [
 [[package]]
 name = "libp2p-swarm-derive"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "206e0aa0ebe004d778d79fb0966aa0de996c19894e2c0605ba2f8524dd4443d8"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2125,8 +2109,7 @@ dependencies = [
 [[package]]
 name = "libp2p-tcp"
 version = "0.42.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad964f312c59dcfcac840acd8c555de8403e295d39edf96f5240048b5fcaa314"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "futures",
  "futures-timer",
@@ -2142,8 +2125,7 @@ dependencies = [
 [[package]]
 name = "libp2p-tls"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47b23dddc2b9c355f73c1e36eb0c3ae86f7dc964a3715f0731cfad352db4d847"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "futures",
  "futures-rustls",
@@ -2161,8 +2143,7 @@ dependencies = [
 [[package]]
 name = "libp2p-upnp"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01bf2d1b772bd3abca049214a3304615e6a36fa6ffc742bdd1ba774486200b8f"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "futures",
  "futures-timer",
@@ -2643,15 +2624,14 @@ checksum = "defc4c55412d89136f966bbb339008b474350e5e6e78d2714439c386b3137a03"
 [[package]]
 name = "multistream-select"
 version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0df8e5eec2298a62b326ee4f0d7fe1a6b90a09dfcf9df37b38f947a8c42f19"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "bytes",
  "futures",
- "log",
  "pin-project",
  "smallvec",
- "unsigned-varint 0.7.2",
+ "tracing",
+ "unsigned-varint 0.8.0",
 ]
 
 [[package]]
@@ -3133,8 +3113,7 @@ dependencies = [
 [[package]]
 name = "quick-protobuf-codec"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15a0580ab32b169745d7a39db2ba969226ca16738931be152a3209b409de2474"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "asynchronous-codec",
  "bytes",
@@ -3519,8 +3498,7 @@ checksum = "955d28af4278de8121b7ebeb796b6a45735dc01436d898801014aced2773a3d6"
 [[package]]
 name = "rw-stream-sink"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8c9026ff5d2f23da5e45bbc283f156383001bfb09c4e44256d02c1a685fe9a1"
+source = "git+https://github.com/informalsystems/rust-libp2p.git?branch=floodsub-max-message-len#79a3214c8e5b8b929cd603cdb2f232a340101611"
 dependencies = [
  "futures",
  "pin-project",

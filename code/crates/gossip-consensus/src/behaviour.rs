@@ -117,7 +117,10 @@ impl Behaviour {
             ),
             PubSubProtocol::FloodSub => {
                 let local_peer_id = PeerId::from_public_key(&keypair.public());
-                Either::Right(floodsub::Floodsub::new(local_peer_id))
+                Either::Right(floodsub::Floodsub::from_config(
+                    floodsub::FloodsubConfig::new(local_peer_id)
+                        .with_max_message_len(MAX_TRANSMIT_SIZE),
+                ))
             }
         };
 
