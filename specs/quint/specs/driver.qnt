@@ -340,7 +340,7 @@ module driver {
             | ProposeValueDInput(v) =>
                 callConsensus(state, state.bk, NoCertificate, ProposeValueCInput(v))
             | VoteDInput(vote) => 
-                val res = applyVote(state.bk, vote, state.valset.get(vote.srcAddress), state.cs.round)
+                val res = applyVote(state.bk, vote, state.cs.round)
                 val cert = getCertificate(res.bookkeeper, res.output)
                 val newState = { ...state, bk: res.bookkeeper, voteKeeperOutput: res.output}
                 val cons_res = match vote.voteType {

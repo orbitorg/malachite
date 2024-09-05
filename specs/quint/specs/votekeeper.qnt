@@ -337,7 +337,7 @@ pure def validCertificate (certificate: Set[Vote], certificateWeight: Weight, ke
                                     x.height == v.height,
                                     x.round == v.round,
                                     x.valueId == v.valueId,}),
-        certificateWeight > 2 / 3 * keeper.totalWeight, 
+        certificateWeight > 2 / 3 * keeper.validatorSet.totalWeight(), 
     }
 
 pure def certificateRound (certificate: Set[Vote]) : Round = 
@@ -381,7 +381,7 @@ pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificat
     else
         // getting the roundVotes that are touched by the certificate
         val round = certificate.certificateRound() 
-        val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
+        val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.validatorSet.totalWeight()))
         // overwrite roundvotes with certificate
         val rvEv = roundVotesAndEvidenceFromCertificate(certificate, certificateWeight, roundVotes)
         val newRounds = keeper.rounds.set(certificate.certificateRound(), rvEv._1)
@@ -390,8 +390,8 @@ pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificat
         val doubleVotes = certificate.filter(cv => oldPrecommits.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
         val newEvidence = doubleVotes.map(cv => Set(cv).union(oldPrecommits.filter(ov => cv.srcAddress == ov.srcAddress)))
         // overwrite roundvotes with commit
-        val newRoundVotes = roundVotes.with("precommits", voteCountFromCommit(commit, commitWeight))
-        val newRounds = keeper.rounds.set(commit.commitRound(), newRoundVotes)
+        val newRoundVotes = roundVotes.with("precommits", voteCountFromCertificate(certificate, certificateWeight))
+        val newRounds = keeper.rounds.set(certificate.certificateRound(), newRoundVotes)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
                             .with("evidence", keeper.evidence.union(rvEv._2))
