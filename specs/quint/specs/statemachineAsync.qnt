@@ -202,13 +202,29 @@ action deliverVote(v: Address, vote: Vote) : bool = all {
     certBuffer' = certBuffer,
 }
 
+action deliverCertificate(v: Address, c: Set[Vote]) : bool = all {
+    certBuffer.get(v).contains(c), // the cert must be sent 
+    certBuffer' = certBuffer.put(v, certBuffer.get(v).exclude(Set(c))),
+    system' = system.put(v, { ...system.get(v), incomingCertificates: system.get(v).incomingCertificates.union(Set(c)) }),
+    _hist' = _hist,
+    propBuffer' = propBuffer,    
+    voteBuffer' = voteBuffer, 
+}
+
+action deliverSomeCertificate(v: Address) : bool = any {
+    nondet c = oneOf(certBuffer.get(v))
+    deliverCertificate(v, c)
+}
+
+
 // deliver a message. Take it from the network buffer of from the faulty set
 //  and put it into the incoming sets
 action deliver(v: Address) : bool = any {
     nondet prop = oneOf(propBuffer.get(v).union(AllFaultyProposals))
     deliverProposal(v, prop),
     nondet vote = oneOf(voteBuffer.get(v).union(AllFaultyVotes))
-    deliverVote(v, vote)
+    deliverVote(v, vote),
+    // deliverSomeCertificate(v) // TODO: add later and fix potentially failing tests
 }
 
 action step = {

@@ -58,6 +58,7 @@ module driver {
         | NoDInput
         | ProposalDInput(Proposal)
         | VoteDInput(Vote)
+        | CertificateDInput(Set[Vote])
         | TimeoutDInput(Timeout)
         | StartDInput
         | PendingDInput(ConsensusInput)
@@ -76,8 +77,6 @@ module driver {
     pure def toDriverOutput(ds: DriverState, out: ConsensusOutput, cert: Certificate) : DriverResult =
         { ds: ds, out: out, certificate: cert }
 
-    val emptyProposal = mkProposal(noAddress, 0, 0, "", 0)
-    val emptyVote = mkVote(Prevote, noAddress, 0, 0, Nil)
 
     // *************************************************************************
     // Interface to app and/or mempool (Proposer, getValue, valid)
@@ -348,37 +347,37 @@ module driver {
             | ProposeValueDInput(v) =>
                 callConsensus(state, state.bk, NoCertificate, ProposeValueCInput(v))
             | VoteDInput(vote) => 
-                match vote.voteType {
-                    // TODO: update or output certificate if necessary; and add a certificate driver input
-                    | Precommit =>
-                        val res = applyVote(state.bk, vote, state.valset.get(vote.srcAddress), state.cs.round)
-                        val cert = getCertificate(res.bookkeeper, res.output)
-                        val newState = { ...state, bk: res.bookkeeper, voteKeeperOutput: res.output}
-                        // only a commit event can come here. 
-                        // shall we store it and only send certificate if needed.  
-                        // if someone re-proposes it also sends the matching Polka
-                        val cons_res = handlePrecommit(newState, vote, res.output, cert) 
-                        val newState2 = cons_res.ds
-                        val conOut = cons_res.out
-                        match conOut {
-                            | DecidedOutput(v) => handleDecided(newState2, conOut, v)
-                            | SkipRoundOutput(r) => handleSkip(newState2, r)
-                            | _ => toDriverOutput(newState2, conOut, cert) 
-                        }
-                    | Prevote =>
-                        val res = applyVote(state.bk, vote, state.valset.get(vote.srcAddress), state.cs.round)
-                        val cert = getCertificate(res.bookkeeper, res.output)
-                        val newState = { ...state, bk: res.bookkeeper, voteKeeperOutput: res.output}
-                        // only a polka event can come here. 
-                        val cons_res = handlePrevote(newState, res.output, cert) 
-                        val newState2 = cons_res.ds
-                        val conOut = cons_res.out
-                        match conOut {
-                            // dead branch. But we should put this after consensus call logic into a function
-                            | DecidedOutput(v) => handleDecided(newState2, conOut, v)
-                            | SkipRoundOutput(r) => handleSkip(newState2, r)
-                            | _ => toDriverOutput(newState2, conOut, cert)
-                        }
+                val res = applyVote(state.bk, vote, state.valset.get(vote.srcAddress), state.cs.round)
+                val cert = getCertificate(res.bookkeeper, res.output)
+                val newState = { ...state, bk: res.bookkeeper, voteKeeperOutput: res.output}
+                val cons_res = match vote.voteType {
+                    | Precommit => handlePrecommit(newState, vote, res.output, cert) 
+                    | Prevote => handlePrevote(newState, res.output, cert) 
+                }
+                val newState2 = cons_res.ds
+                val conOut = cons_res.out
+                match conOut {
+                    | DecidedOutput(v) => handleDecided(newState2, conOut, v)
+                    | SkipRoundOutput(r) => handleSkip(newState2, r)
+                    | _ => toDriverOutput(newState2, conOut, cert) 
+                }
+            | CertificateDInput(votes) =>
+                val certificateWeight = votes.fold(0, (s, vote) => s + state.valset.get(vote.srcAddress))
+                val res = applyCertificate(state.bk, votes, certificateWeight, state.cs.round)
+                val cert = getCertificate(res.bookkeeper, res.output)
+                val newState = { ...state, bk: res.bookkeeper, voteKeeperOutput: res.output}
+                // workaround for chooseSome
+                val someVote = votes.fold(emptyVote, (sum, y) => y)
+                val cons_res = match someVote.voteType {
+                    | Precommit => handlePrecommit(newState, someVote, res.output, cert) 
+                    | Prevote =>  handlePrevote(newState, res.output, cert) 
+                }
+                val newState2 = cons_res.ds
+                val conOut = cons_res.out
+                match conOut {
+                    | DecidedOutput(v) => handleDecided(newState2, conOut, v)
+                    | SkipRoundOutput(r) => handleSkip(newState2, r)
+                    | _ => toDriverOutput(newState2, conOut, cert)
                 }
             | TimeoutDInput(timeout) =>
                 val res = state.handleTimeout(timeout)
@@ -415,6 +414,7 @@ module driver {
         timeouts: Set[(Timeout, Height, Round)],
         incomingVotes: Set[Vote],
         incomingProposals: Set[Proposal],
+        incomingCertificates: Set[Set[Vote]],
         getValueRequests: Set[(Height, Round)],
         nextValueToPropose: Value, 
     }
@@ -424,6 +424,7 @@ module driver {
         timeouts: Set(),
         incomingVotes: Set(),
         incomingProposals: Set(),
+        incomingCertificates: Set(),
         getValueRequests: Set(),
         nextValueToPropose: Nil, 
     }
@@ -442,7 +443,7 @@ module driver {
         val newstate = { ...state, timeouts: state.timeouts.exclude(Set(someTimeout))}
         (newstate, TimeoutDInput(someTimeout._1))
 
-    // This is a simple function that figures out in what external events (messages,
+    // This function figures out on what external events (messages,
     // timeouts, etc.) the node should act.
     // currently this is linked in via the state machine. But we can move it into
     // the functional layer
@@ -467,7 +468,11 @@ module driver {
             // this might be cheating as we look into the "es"
             (state, PendingDInput(input_height_round._1))
 
-// TODO: incomingCertificate comes here.
+        else if (state.incomingCertificates != Set())
+            // val cert = state.incomingCertificates.chooseSome()
+            val cert = state.incomingCertificates.fold (Set(), (sum, y) => y)
+            val newstate = { ...state, incomingCertificates: state.incomingCertificates.exclude(Set(cert))}
+            (newstate, CertificateDInput(cert))
 
         else if (state.incomingProposals != Set())
             // pick proposal, remove it from incoming

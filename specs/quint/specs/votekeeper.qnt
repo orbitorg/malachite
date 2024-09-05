@@ -318,7 +318,7 @@ module votekeeper {
 
 
 pure def validCertificate (certificate: Set[Vote], certificateWeight: Weight, keeper: Bookkeeper) : bool = 
-    val v = chooseSome(certificate)
+    val v = certificate.fold(emptyVote, (sum, y) => y)
     all {
         v.valueId != Nil,
         certificate.forall(x => all {    x.voteType == v.voteType,
@@ -328,9 +328,17 @@ pure def validCertificate (certificate: Set[Vote], certificateWeight: Weight, ke
         certificateWeight > 2 / 3 * keeper.totalWeight, 
     }
 
-pure def certificateRound (certificate: Set[Vote]) : Round = chooseSome(certificate).round
-pure def certificateValue (certificate: Set[Vote]) : Value = chooseSome(certificate).valueId
-pure def certificateType (certificate: Set[Vote]) : VoteType = chooseSome(certificate).voteType
+pure def certificateRound (certificate: Set[Vote]) : Round = 
+    // chooseSome(certificate).round
+    certificate.fold(emptyVote, (sum, y) => y).round
+
+pure def certificateValue (certificate: Set[Vote]) : Value = 
+    //chooseSome(certificate).valueId
+    certificate.fold(emptyVote, (sum, y) => y).valueId
+
+pure def certificateType (certificate: Set[Vote]) : VoteType = 
+    // chooseSome(certificate).voteType
+    certificate.fold(emptyVote, (sum, y) => y).voteType
 
 pure def voteCountFromCertificate (certificate: Set[Vote], certificateWeight: Weight) : VoteCount =
     {   totalWeight: certificateWeight,
