@@ -385,13 +385,6 @@ pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificat
         // overwrite roundvotes with certificate
         val rvEv = roundVotesAndEvidenceFromCertificate(certificate, certificateWeight, roundVotes)
         val newRounds = keeper.rounds.set(certificate.certificateRound(), rvEv._1)
-        // compute evidence
-        val oldPrecommits = roundVotes.precommits.receivedVotes
-        val doubleVotes = certificate.filter(cv => oldPrecommits.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
-        val newEvidence = doubleVotes.map(cv => Set(cv).union(oldPrecommits.filter(ov => cv.srcAddress == ov.srcAddress)))
-        // overwrite roundvotes with commit
-        val newRoundVotes = roundVotes.with("precommits", voteCountFromCertificate(certificate, certificateWeight))
-        val newRounds = keeper.rounds.set(certificate.certificateRound(), newRoundVotes)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
                             .with("evidence", keeper.evidence.union(rvEv._2))
