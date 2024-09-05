@@ -13,17 +13,19 @@ val others = otherSet.fold(List(), (s, x) => s.append(x))
 /*
 - there need to be faulty processes
 - there needs to be a correct node under test "nut"
-- there are other processes that together with the faulty ones are 2f+1
-- the others include the proposer.
+- there are other processes that together with "nut"" are 2f+1
+- there is a faulty proposer in the first round who equivocates.
 - the others are successful until sending precommit value
     - they set locked value and valid value
-- then faulty precommit nil are delivered to correct process
+- "nut" doesn't see the lock (the faulty proposer prevotes nil to nut)
+- everyone goes to the next round
 
-- the precommits from others are delivered to correct processes so that timeoutprecommit is started
-- correct processes go to the next round
-- there the proposer
-    - uses the valid value stored to send proposal for valid value
-    - correct processes take this to execute line 28 and prevote for this value
+- now there is a correct proposer, but it fails because "nut" doesn't have enough
+  prevotes to execute line 28. 
+  
+TODO: From then on we are stuck forever. Thus the idea is to communicate Polkas
+
+
 */
 
 run hiddenlockrun = 
@@ -94,7 +96,7 @@ run hiddenlockrun =
     // and we have the liveness situation where the others have prevoted for the value ...
     .expect(otherSet.forall(p => Correct.forall(q => voteBuffer.get(q).contains(mkVote(Prevote, p, 0, 1, Val(value))))))
 
-    // ... but nut is prevoting Nil because of the lock that is hidden form it
+    // ... but nut is prevoting Nil because of the lock that is hidden from it
     .expect(Correct.forall(q => voteBuffer.get(q).contains(mkVote(Prevote, nut, 0, 1, Nil))))
 
     // nut has collected evidence 

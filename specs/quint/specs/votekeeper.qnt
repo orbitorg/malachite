@@ -53,6 +53,8 @@ module votekeeper {
         evidence: Set[Set[Vote]]
     }
 
+
+
     pure def initBookKeeper(initialHeight: Height, totalVotingPower: Weight): Bookkeeper = { 
         height: initialHeight, 
         totalWeight: totalVotingPower, 
@@ -79,30 +81,30 @@ module votekeeper {
     pure def newVoteCount(total: Weight): VoteCount =
         { totalWeight: total, valuesWeights: Map(), votesAddresses: Set(), receivedVotes: Set() }
 
-    // Returns true if weight > 2/3 * total (quorum: at least f+1 correct)
-    pure def isQuorum(weight: Weight, total: Weight): bool =
+    // Returns true if weight > 2/3 * total (certificate: at least f+1 correct)
+    pure def isCertificate(weight: Weight, total: Weight): bool =
         3 * weight > 2 * total
 
-    run isQuorumTest = all {
-        assert(isQuorum(0,0) == false),
-        assert(isQuorum(2,6) == false),
-        assert(isQuorum(4,6) == false),
-        assert(isQuorum(5,6) == true),
+    run isCertificateTest = all {
+        assert(isCertificate(0,0) == false),
+        assert(isCertificate(2,6) == false),
+        assert(isCertificate(4,6) == false),
+        assert(isCertificate(5,6) == true),
     }
 
-    // True iff the vote count has a quorum on a specific value.
-    pure def hasQuorumOnValue(voteCount: VoteCount, value: Value): bool =
-        isQuorum(voteCount.valuesWeights.getOrElse(value, 0), voteCount.totalWeight)
+    // True iff the vote count has a certificate on a specific value.
+    pure def hasCertificateOnValue(voteCount: VoteCount, value: Value): bool =
+        isCertificate(voteCount.valuesWeights.getOrElse(value, 0), voteCount.totalWeight)
 
-    // True iff the vote count has a quorum on value nil.
-    pure def hasQuorumOnNil(voteCount: VoteCount): bool =
-        hasQuorumOnValue(voteCount, Nil)
+    // True iff the vote count has a certificate on value nil.
+    pure def hasCertificateOnNil(voteCount: VoteCount): bool =
+        hasCertificateOnValue(voteCount, Nil)
 
-    // True iff the vote count has a quorum on any value.
-    pure def hasQuorumOnAny(voteCount: VoteCount): bool =
-        isQuorum(voteCount.valuesWeights.mapSumValues(), voteCount.totalWeight)
+    // True iff the vote count has a certificate on any value.
+    pure def hasCertificateOnAny(voteCount: VoteCount): bool =
+        isCertificate(voteCount.valuesWeights.mapSumValues(), voteCount.totalWeight)
 
-    // Returns true if weight > 1/3 * total (small quorum: at least one correct)
+    // Returns true if weight > 1/3 * total (small certificate: at least one correct)
     pure def isSkip(weight: Weight, total: Weight): bool =
         3 * weight > total
 
@@ -155,17 +157,17 @@ module votekeeper {
         }
 
     // Given a voteCount and a value, the function returns:
-    // - A threshold Value if there is a quorum for the given value;
-    // - A threshold Nil if there is a quorum for the nil and no quorum for the value;
-    // - A threshold Any if there is no quorum for the value or nil and there is a quorum for any (including nil);
-    // - A threshold Unreached otherwise indicating that no quorum has been yet reached.
+    // - A threshold Value if there is a certificate for the given value;
+    // - A threshold Nil if there is a certificate for the nil and no certificate for the value;
+    // - A threshold Any if there is no certificate for the value or nil and there is a certificate for any (including nil);
+    // - A threshold Unreached otherwise indicating that no certificate has been yet reached.
     pure def computeThreshold(voteCount: VoteCount, value: Value): Threshold =
-        if (voteCount.hasQuorumOnValue(value)) {
+        if (voteCount.hasCertificateOnValue(value)) {
             match value {
                 | Nil => NilThreshold
                 | Val(v) => ValueThreshold(v)
             }
-        } else if (voteCount.hasQuorumOnAny()) {
+        } else if (voteCount.hasCertificateOnAny()) {
             AnyThreshold
         } else 
             UnreachedThreshold
@@ -315,68 +317,83 @@ module votekeeper {
         }
 
 
-pure def validQuorum (quorum: Set[Vote], quorumWeight: Weight, keeper: Bookkeeper) : bool = 
-    val v = chooseSome(quorum)
+pure def validCertificate (certificate: Set[Vote], certificateWeight: Weight, keeper: Bookkeeper) : bool = 
+    val v = chooseSome(certificate)
     all {
         v.valueId != Nil,
-        quorum.forall(x => all {    x.voteType == v.voteType,
+        certificate.forall(x => all {    x.voteType == v.voteType,
                                     x.height == v.height,
                                     x.round == v.round,
                                     x.valueId == v.valueId,}),
-        quorumWeight > 2 / 3 * keeper.totalWeight, 
+        certificateWeight > 2 / 3 * keeper.totalWeight, 
     }
 
-pure def quorumRound (quorum: Set[Vote]) : Round = chooseSome(quorum).round
-pure def quorumValue (quorum: Set[Vote]) : Value = chooseSome(quorum).valueId
-pure def quorumType (quorum: Set[Vote]) : VoteType = chooseSome(quorum).voteType
+pure def certificateRound (certificate: Set[Vote]) : Round = chooseSome(certificate).round
+pure def certificateValue (certificate: Set[Vote]) : Value = chooseSome(certificate).valueId
+pure def certificateType (certificate: Set[Vote]) : VoteType = chooseSome(certificate).voteType
 
-pure def voteCountFromQuorum (quorum: Set[Vote], quorumWeight: Weight) : VoteCount =
-    {   totalWeight: quorumWeight,
-        valuesWeights: Map(quorumValue(quorum) -> quorumWeight),
-        votesAddresses: quorum.map(x => x.srcAddress),
-        receivedVotes: quorum,
+pure def voteCountFromCertificate (certificate: Set[Vote], certificateWeight: Weight) : VoteCount =
+    {   totalWeight: certificateWeight,
+        valuesWeights: Map(certificateValue(certificate) -> certificateWeight),
+        votesAddresses: certificate.map(x => x.srcAddress),
+        receivedVotes: certificate,
     }
 
-pure def roundVotesAndEvidenceFromQuorum (quorum: Set[Vote], quorumWeight: Weight, roundVotes: RoundVotes) : (RoundVotes, Set[Set[Vote]]) = 
+pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], certificateWeight: Weight, roundVotes: RoundVotes) : (RoundVotes, Set[Set[Vote]]) = 
     // compute evidence
-    val oldVotes = match quorum.quorumType() {
+    val oldVotes = match certificate.certificateType() {
         | Prevote => roundVotes.prevotes.receivedVotes
         | Precommit => roundVotes.precommits.receivedVotes
     } 
-    val doubleVotes = quorum.filter(cv => oldVotes.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
+    val doubleVotes = certificate.filter(cv => oldVotes.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
     val newEvidence = doubleVotes.map(cv => Set(cv).union(oldVotes.filter(ov => cv.srcAddress == ov.srcAddress)))
-    match quorum.quorumType() {
-        | Prevote => (roundVotes.with("prevotes", voteCountFromQuorum(quorum, quorumWeight)), newEvidence)
-        | Precommit => (roundVotes.with("precommits", voteCountFromQuorum(quorum, quorumWeight)), newEvidence)
+    match certificate.certificateType() {
+        | Prevote => (roundVotes.with("prevotes", voteCountFromCertificate(certificate, certificateWeight)), newEvidence)
+        | Precommit => (roundVotes.with("precommits", voteCountFromCertificate(certificate, certificateWeight)), newEvidence)
     }
 
 
 // This takes a commit, checks for evidence, and overwrites the roundVotes with the new commit
 // TODO: add test for applyCommit with/without evidence
-pure def applyQuorum(keeper: Bookkeeper, quorum: Set[Vote], quorumWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
-    if (not(validQuorum(quorum, quorumWeight, keeper)))
+
+// TODO: rename Certificate to Certificate
+// TODO: Get certificate function. (Test whether the voting power is sufficient)
+pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificateWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
+    if (not(validCertificate(certificate, certificateWeight, keeper)))
         { bookkeeper: keeper, output: NoVKOutput }
     else
         // getting the roundVotes that are touched by the commit
-        val round = quorum.quorumRound() // TODO: in refactor check it is a commit
+        val round = certificate.certificateRound() // TODO: in refactor check it is a commit
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
-        // overwrite roundvotes with quorum
-        val rvEv = roundVotesAndEvidenceFromQuorum(quorum, quorumWeight, roundVotes)
-        val newRounds = keeper.rounds.set(quorum.quorumRound(), rvEv._1)
+        // overwrite roundvotes with certificate
+        val rvEv = roundVotesAndEvidenceFromCertificate(certificate, certificateWeight, roundVotes)
+        val newRounds = keeper.rounds.set(certificate.certificateRound(), rvEv._1)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
                             .with("evidence", keeper.evidence.union(rvEv._2))
                             .with("rounds", newRounds)
-        match quorum.quorumValue() {
-            | Val(v) => match quorum.quorumType() {
+        match certificate.certificateValue() {
+            | Val(v) => match certificate.certificateType() {
                             | Prevote => { bookkeeper: newkeeper, output: PolkaValueVKOutput((round, v)) }
                             | Precommit =>  { bookkeeper: newkeeper, output: PrecommitValueVKOutput((round, v)) }
                         }
             | Nil => { bookkeeper: keeper, output: NoVKOutput } // already done in validity check in the top-level if, but 
                                                                 // currently needed to have the match complete
         }
-        
-        
+
+pure def getCertificate(keeper: Bookkeeper, vkout: VoteKeeperOutput) : Certificate =
+// TODO: check certificate has enough voting power
+    match vkout {
+        | PolkaValueVKOutput(rndVal) => 
+            val cert = keeper.rounds.get(rndVal._1).prevotes.receivedVotes.filter(v => v.valueId == Val(rndVal._2))
+            Polka(cert)
+        | PrecommitValueVKOutput(rndVal) => 
+            val cert = keeper.rounds.get(rndVal._1).precommits.receivedVotes.filter(v => v.valueId == Val(rndVal._2))
+            Commit(cert)
+        | _ => NoCertificate
+    }
+
+
 
 
     // Called by the driver to check if there is a specific threshold for a given round and voteType.
@@ -393,9 +410,9 @@ pure def applyQuorum(keeper: Bookkeeper, quorum: Set[Vote], quorumWeight: Weight
 
     pure def checkThresholdOnVoteCount(threshold: Threshold, voteCount: VoteCount): bool =
         match threshold {
-            | ValueThreshold(v) => voteCount.hasQuorumOnValue(Val(v))
-            | NilThreshold => voteCount.hasQuorumOnValue(Nil)
-            | AnyThreshold => voteCount.hasQuorumOnAny()
+            | ValueThreshold(v) => voteCount.hasCertificateOnValue(Val(v))
+            | NilThreshold => voteCount.hasCertificateOnValue(Nil)
+            | AnyThreshold => voteCount.hasCertificateOnAny()
             | _ => false
         }
 
