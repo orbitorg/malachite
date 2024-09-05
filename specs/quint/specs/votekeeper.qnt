@@ -53,8 +53,6 @@ module votekeeper {
         evidence: Set[Set[Vote]]
     }
 
-
-
     pure def initBookKeeper(initialHeight: Height, totalVotingPower: Weight): Bookkeeper = { 
         height: initialHeight, 
         totalWeight: totalVotingPower, 
@@ -82,27 +80,27 @@ module votekeeper {
         { totalWeight: total, valuesWeights: Map(), votesAddresses: Set(), receivedVotes: Set() }
 
     // Returns true if weight > 2/3 * total (certificate: at least f+1 correct)
-    pure def isCertificate(weight: Weight, total: Weight): bool =
+    pure def isQuorum(weight: Weight, total: Weight): bool =
         3 * weight > 2 * total
 
-    run isCertificateTest = all {
-        assert(isCertificate(0,0) == false),
-        assert(isCertificate(2,6) == false),
-        assert(isCertificate(4,6) == false),
-        assert(isCertificate(5,6) == true),
+    run isQuorumTest = all {
+        assert(isQuorum(0,0) == false),
+        assert(isQuorum(2,6) == false),
+        assert(isQuorum(4,6) == false),
+        assert(isQuorum(5,6) == true),
     }
 
     // True iff the vote count has a certificate on a specific value.
-    pure def hasCertificateOnValue(voteCount: VoteCount, value: Value): bool =
-        isCertificate(voteCount.valuesWeights.getOrElse(value, 0), voteCount.totalWeight)
+    pure def hasQuorumOnValue(voteCount: VoteCount, value: Value): bool =
+        isQuorum(voteCount.valuesWeights.getOrElse(value, 0), voteCount.totalWeight)
 
     // True iff the vote count has a certificate on value nil.
-    pure def hasCertificateOnNil(voteCount: VoteCount): bool =
-        hasCertificateOnValue(voteCount, Nil)
+    pure def hasQuorumOnNil(voteCount: VoteCount): bool =
+        hasQuorumOnValue(voteCount, Nil)
 
     // True iff the vote count has a certificate on any value.
-    pure def hasCertificateOnAny(voteCount: VoteCount): bool =
-        isCertificate(voteCount.valuesWeights.mapSumValues(), voteCount.totalWeight)
+    pure def hasQuorumOnAny(voteCount: VoteCount): bool =
+        isQuorum(voteCount.valuesWeights.mapSumValues(), voteCount.totalWeight)
 
     // Returns true if weight > 1/3 * total (small certificate: at least one correct)
     pure def isSkip(weight: Weight, total: Weight): bool =
@@ -162,12 +160,12 @@ module votekeeper {
     // - A threshold Any if there is no certificate for the value or nil and there is a certificate for any (including nil);
     // - A threshold Unreached otherwise indicating that no certificate has been yet reached.
     pure def computeThreshold(voteCount: VoteCount, value: Value): Threshold =
-        if (voteCount.hasCertificateOnValue(value)) {
+        if (voteCount.hasQuorumOnValue(value)) {
             match value {
                 | Nil => NilThreshold
                 | Val(v) => ValueThreshold(v)
             }
-        } else if (voteCount.hasCertificateOnAny()) {
+        } else if (voteCount.hasQuorumOnAny()) {
             AnyThreshold
         } else 
             UnreachedThreshold
@@ -318,7 +316,7 @@ module votekeeper {
 
 
 pure def validCertificate (certificate: Set[Vote], certificateWeight: Weight, keeper: Bookkeeper) : bool = 
-    val v = certificate.fold(emptyVote, (sum, y) => y)
+    val v = certificate.fold(emptyVote, (sum, y) => y)    // certificate.chooseSome()
     all {
         v.valueId != Nil,
         certificate.forall(x => all {    x.voteType == v.voteType,
@@ -361,14 +359,13 @@ pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], certifica
     }
 
 
-// This takes a commit, checks for evidence, and overwrites the roundVotes with the new commit
-// TODO: add test for applyCommit with/without evidence
-
+// This takes a certificate, checks for evidence, and overwrites the roundVotes with the new certificate
+// TODO: add test for applyCertificate with/without evidence
 pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificateWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
     if (not(validCertificate(certificate, certificateWeight, keeper)))
         { bookkeeper: keeper, output: NoVKOutput }
     else
-        // getting the roundVotes that are touched by the commit
+        // getting the roundVotes that are touched by the certificate
         val round = certificate.certificateRound() 
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
         // overwrite roundvotes with certificate
@@ -416,9 +413,9 @@ pure def getCertificate(keeper: Bookkeeper, vkout: VoteKeeperOutput) : Certifica
 
     pure def checkThresholdOnVoteCount(threshold: Threshold, voteCount: VoteCount): bool =
         match threshold {
-            | ValueThreshold(v) => voteCount.hasCertificateOnValue(Val(v))
-            | NilThreshold => voteCount.hasCertificateOnValue(Nil)
-            | AnyThreshold => voteCount.hasCertificateOnAny()
+            | ValueThreshold(v) => voteCount.hasQuorumOnValue(Val(v))
+            | NilThreshold => voteCount.hasQuorumOnValue(Nil)
+            | AnyThreshold => voteCount.hasQuorumOnAny()
             | _ => false
         }
 

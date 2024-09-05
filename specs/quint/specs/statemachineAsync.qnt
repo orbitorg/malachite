@@ -92,7 +92,6 @@ pure def sendCertificate(buffer : Address -> Set[Set[Vote]], cert: Certificate):
         | Commit(c) => buffer.keys().mapBy(x => { ...buffer.get(x).union(Set(c)) })
     }
 
-
 // Record that a timeout has started at node v
 // As we do set union here, there is no need to check whether this happens the first time
 pure def startTimeout(sys: Address -> NodeState, v: Address, timeout: Timeout) : Address -> NodeState =
@@ -159,13 +158,16 @@ action valStep(v: Address) : bool = {
                 system' = sys,
             }
         },
+
+        // we make a certificate available to the others. In the implementation (and potentially
+        // a more high-level node spec) we will need to be more clever about this, e.g., only
+        // send the certificate if I am in a future round and the proposer
         certBuffer' = sendCertificate(certBuffer, res.certificate),
+
         _hist' = { validator: v, input: driver_input, output: consensus_output }
 //         _histSimple' = (v, input._2.name, res._2.name)
     }
 }
-
-
 
 
 action setNextValueToPropose(v: Address, value: NonNilValue) : bool = all {
@@ -176,7 +178,6 @@ action setNextValueToPropose(v: Address, value: NonNilValue) : bool = all {
     voteBuffer' = voteBuffer,
     certBuffer' = certBuffer,
 }
-
 
 
 action deliverProposal(v: Address, p: Proposal) : bool = all {
@@ -217,14 +218,16 @@ action deliverSomeCertificate(v: Address) : bool = any {
 }
 
 
-// deliver a message. Take it from the network buffer of from the faulty set
-//  and put it into the incoming sets
+// deliver a message or a certiciate. 
+// Take it from the network buffer of from the faulty set and put it into the incoming sets
 action deliver(v: Address) : bool = any {
     nondet prop = oneOf(propBuffer.get(v).union(AllFaultyProposals))
     deliverProposal(v, prop),
     nondet vote = oneOf(voteBuffer.get(v).union(AllFaultyVotes))
     deliverVote(v, vote),
-    deliverSomeCertificate(v),
+    deliverSomeCertificate(v),  // we might do fault injection here. But faulty nodes cannot
+                                // totally make up certificates. They cannot forge messages to look 
+                                // like being sent by correct nodes
 }
 
 action step = {

@@ -56,7 +56,8 @@ run runToDecision =
 // testedVal has moved on to round 1
     .expect(system.get(testedVal).es.cs.round == 1) 
 
-// now we deliver the certificates and the proposal
+// at this testedVal's progess can only be ensured by receiving certificates
+// so now we deliver the certificates and the proposal
 
     .then(deliverSomeCertificate(testedVal))
     .then(deliverSomeCertificate(testedVal))
@@ -65,10 +66,10 @@ run runToDecision =
     .then(valStep(testedVal))
     .then(valStep(testedVal))
 
-// we are good. everyone has decided
+// now we are good. everyone has decided
     .expect(Correct.forall(x => system.get(x).es.chain == List(Val("blue"))))
 
-// moreover testedVal has evidence
+// moreover, testedVal has evidence
     .expect(Faulty.forall(f =>
         system.get(testedVal).es.bk.evidence.contains(
             Set(

@@ -25,8 +25,6 @@ module driver {
         certificates: Set[Certificate], // we store the Polka and Commits we have seen
     }
 
-    
-
     pure def initDriver(v: Address, vs: Address -> Weight): DriverState = {
         bk: initBookKeeper(0, vs.mapSumValues()),
         cs: initConsensusState(v, 0),
@@ -51,7 +49,7 @@ module driver {
         { ...s, nextValueToPropose: Val(value) }
 
     // *************************************************************************
-    // Input
+    // Input / Output
     // *************************************************************************
 
     type DriverInput = 
@@ -71,11 +69,11 @@ module driver {
         certificate: Certificate,
     }
 
-    pure def toDriverOutputNoCertificate(ds: DriverState, out: ConsensusOutput) : DriverResult =
-        { ds: ds, out: out, certificate: NoCertificate }
-
     pure def toDriverOutput(ds: DriverState, out: ConsensusOutput, cert: Certificate) : DriverResult =
         { ds: ds, out: out, certificate: cert }
+
+    pure def toDriverOutputNoCertificate(ds: DriverState, out: ConsensusOutput) : DriverResult =
+        { ds: ds, out: out, certificate: NoCertificate }
 
 
     // *************************************************************************
@@ -103,9 +101,6 @@ module driver {
 
     pure def ListContains(list, value) = 
         list.foldl(false, (s,x) => s or x == value)
-
-    // check whether the event has been already sent to consensus. If not, do so.
-
 
 
     pure def callConsensus(es: DriverState, bk: Bookkeeper, c: Certificate, csInput: ConsensusInput): DriverResult =
@@ -337,12 +332,10 @@ module driver {
                 handleSkip({ ...state, started: true }, 0)
             | ProposalDInput(proposal) =>
                 val res = handleProposal(state, proposal)
-                val newState = res.ds
-                val conOut = res.out
-                match conOut {
-                    | DecidedOutput(v) => handleDecided(newState, conOut, v, NoCertificate)
-                    | SkipRoundOutput(r) => handleSkip(newState, r)
-                    | _ => toDriverOutputNoCertificate(newState, conOut)
+                match res.out {
+                    | DecidedOutput(v) => handleDecided(res.ds, res.out, v, NoCertificate)
+                    | SkipRoundOutput(r) => handleSkip(res.ds, r)
+                    | _ => toDriverOutputNoCertificate(res.ds, res.out)
                 }
             | ProposeValueDInput(v) =>
                 callConsensus(state, state.bk, NoCertificate, ProposeValueCInput(v))
@@ -354,13 +347,10 @@ module driver {
                     | Precommit => handlePrecommit(newState, vote, res.output, cert) 
                     | Prevote => handlePrevote(newState, res.output, cert) 
                 }
-                val newState2 = cons_res.ds
-                val conOut = cons_res.out
-                val conCert = cons_res.certificate
-                match conOut {
-                    | DecidedOutput(v) => handleDecided(newState2, conOut, v, conCert)
-                    | SkipRoundOutput(r) => handleSkip(newState2, r)
-                    | _ => toDriverOutput(newState2, conOut, cert) 
+                match cons_res.out {
+                    | DecidedOutput(v) => handleDecided(cons_res.ds, cons_res.out, v, cons_res.certificate)
+                    | SkipRoundOutput(r) => handleSkip(cons_res.ds, r)
+                    | _ => toDriverOutput(cons_res.ds, cons_res.out, cert) 
                 }
             | CertificateDInput(votes) =>
                 val certificateWeight = votes.fold(0, (s, vote) => s + state.valset.get(vote.srcAddress))
@@ -373,26 +363,21 @@ module driver {
                     | Precommit => handlePrecommit(newState, someVote, res.output, cert) 
                     | Prevote =>  handlePrevote(newState, res.output, cert) 
                 }
-                val newState2 = cons_res.ds
-                val conOut = cons_res.out
-                val conCert = cons_res.certificate
-                match conOut {
-                    | DecidedOutput(v) => handleDecided(newState2, conOut, v, conCert)
-                    | SkipRoundOutput(r) => handleSkip(newState2, r)
-                    | _ => toDriverOutput(newState2, conOut, cert)
+                match cons_res.out {
+                    | DecidedOutput(v) => handleDecided(cons_res.ds, cons_res.out, v, cons_res.certificate)
+                    | SkipRoundOutput(r) => handleSkip(cons_res.ds, r)
+                    | _ => toDriverOutput(cons_res.ds, cons_res.out, cert)
                 }
             | TimeoutDInput(timeout) =>
                 val res = state.handleTimeout(timeout)
-                val newState = res.ds
-                val conOut = res.out
                 // result should be vote or skip
-                match conOut {
+                match res.out {
                     | SkipRoundOutput(round) =>
-                        handleSkip(newState, round)
+                        handleSkip(res.ds, round)
                         // skip starts a new round. This may involve getValue. If we choose to move the getValue
                         // logic out of the driver, we wouldn't call skip here but add a (to be defined)
                         // DriverInput
-                    | _ => toDriverOutputNoCertificate(newState, conOut)
+                    | _ => toDriverOutputNoCertificate(res.ds, res.out)
                 }
             | PendingDInput(_) => // CHECK: why input is not used?
                 handlePendingInput(state)
@@ -453,7 +438,7 @@ module driver {
         if (not(state.es.started))
             (state, StartDInput)
 
-        // This is hard coded right now. I remove the request when served
+        // This is hard-coded right now. I remove the request when served
         // also this prevents the StepChangeDInput for the proposer of a new round
         else if (state.getValueRequests.contains((state.es.cs.height, state.es.cs.round)))
             val newstate = { ...state, getValueRequests: state.getValueRequests.exclude(Set((state.es.cs.height, state.es.cs.round)))}
@@ -502,6 +487,7 @@ module driver {
         | ProposeValueCmd
         | ProposalCmd
         | VoteCmd
+        | CertificateCmd
         | TimeoutCmd
 
     // This function can be used to control test runs better.
@@ -535,6 +521,12 @@ module driver {
             val newstate = { ...state, incomingVotes: state.incomingVotes.exclude(Set(vote))}
             (newstate, VoteDInput(vote))
 
+        else if (command == CertificateCmd and state.incomingCertificates != Set())
+            // val cert = state.incomingCertificates.chooseSome()
+            val cert = state.incomingCertificates.fold (Set(), (sum, y) => y)
+            val newstate = { ...state, incomingCertificates: state.incomingCertificates.exclude(Set(cert))}
+            (newstate, CertificateDInput(cert))
+            
         else if (command == TimeoutCmd and state.existsTimeout())
             state.pickTimeout()
 

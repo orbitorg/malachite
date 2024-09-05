@@ -23,9 +23,8 @@ val others = otherSet.fold(List(), (s, x) => s.append(x))
 - now there is a correct proposer, but it fails because "testedval" doesn't have enough
   prevotes to execute line 28. 
   
-TODO: From then on we are stuck forever. Thus the idea is to communicate Polkas
-
-
+- to get out of this, we provide a polka certificate to testedval
+- then progress is ensured
 */
 
 run hiddenlockrun = 
@@ -102,6 +101,8 @@ run hiddenlockrun =
     // testedval has collected evidence 
     .expect(Faulty.forall(f => system.get(testedval).es.bk.evidence.contains(Set( mkVote(Prevote, f, 0, 0, Nil), 
                                                                             mkVote(Prevote, f, 0, 0, Val(value))))))
+
+    // now we require certificates in order to make progress
 
     // testedval now gets the certificate for round 0, but it is too late for this round.
     .then(deliverSomeCertificate(testedval))
