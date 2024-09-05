@@ -5,6 +5,7 @@ use libp2p::{gossipsub, identify, ping};
 
 pub use libp2p::identity::Keypair;
 pub use libp2p::{Multiaddr, PeerId};
+
 use malachite_metrics::Registry;
 
 use crate::PROTOCOL_VERSION;
@@ -20,8 +21,12 @@ pub struct Behaviour {
 }
 
 fn message_id(message: &gossipsub::Message) -> gossipsub::MessageId {
-    let hash = blake3::hash(&message.data);
-    gossipsub::MessageId::from(hash.as_bytes().to_vec())
+    use seahash::SeaHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = SeaHasher::new();
+    message.hash(&mut hasher);
+    gossipsub::MessageId::new(hasher.finish().to_be_bytes().as_slice())
 }
 
 fn gossipsub_config() -> gossipsub::Config {
@@ -32,10 +37,10 @@ fn gossipsub_config() -> gossipsub::Config {
         .validation_mode(gossipsub::ValidationMode::Strict)
         .history_gossip(3)
         .history_length(5)
-        .mesh_n_high(12)
-        .mesh_n_low(4)
-        .mesh_outbound_min(2)
-        .mesh_n(6)
+        .mesh_n_high(4)
+        .mesh_n_low(1)
+        .mesh_outbound_min(1)
+        .mesh_n(3)
         .message_id_fn(message_id)
         .build()
         .unwrap()

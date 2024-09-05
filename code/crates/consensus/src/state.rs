@@ -1,11 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 
 use malachite_common::*;
 use malachite_driver::Driver;
 
 use crate::error::Error;
 use crate::msg::Msg;
-use crate::types::PeerId;
 
 /// The state maintained by consensus for processing a [`Msg`][crate::msg::Msg].
 pub struct State<Ctx>
@@ -17,9 +16,6 @@ where
 
     /// Driver for the per-round consensus state machine
     pub driver: Driver<Ctx>,
-
-    /// The set of peers we are connected to.
-    pub connected_peers: BTreeSet<PeerId>,
 
     /// A queue of gossip events that were received before the
     /// driver started the new height and was still at round Nil.
@@ -66,10 +62,10 @@ where
     }
 
     pub fn store_signed_precommit(&mut self, precommit: SignedVote<Ctx>) {
-        assert_eq!(precommit.vote.vote_type(), VoteType::Precommit);
+        assert_eq!(precommit.vote_type(), VoteType::Precommit);
 
-        let height = precommit.vote.height();
-        let round = precommit.vote.round();
+        let height = precommit.height();
+        let round = precommit.round();
 
         self.signed_precommits
             .entry((height, round))
@@ -91,7 +87,7 @@ where
 
         // Keep the commits for the specified value.
         // For now we ignore equivocating votes if present.
-        commits_for_height_and_round.retain(|c| c.vote.value() == &NilOrVal::Val(value.id()));
+        commits_for_height_and_round.retain(|c| c.value() == &NilOrVal::Val(value.id()));
 
         commits_for_height_and_round
     }

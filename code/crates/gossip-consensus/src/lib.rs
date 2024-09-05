@@ -8,43 +8,37 @@ use std::error::Error;
 use std::ops::ControlFlow;
 use std::time::Duration;
 
-use derive_where::derive_where;
 use futures::StreamExt;
 use libp2p::metrics::{Metrics, Recorder};
 use libp2p::swarm::{self, SwarmEvent};
 use libp2p::{gossipsub, identify, SwarmBuilder};
-use libp2p_tls as _; // https://github.com/informalsystems/malachite/issues/269
 use tokio::sync::mpsc;
 use tracing::{debug, error, error_span, trace, Instrument};
 
-use malachite_common::Context;
 use malachite_metrics::SharedRegistry;
 
+pub use bytes::Bytes;
+pub use libp2p::gossipsub::MessageId;
 pub use libp2p::identity::Keypair;
 pub use libp2p::{Multiaddr, PeerId};
 
 pub mod behaviour;
 pub mod handle;
 
-mod msg;
-pub use msg::GossipMsg;
-
 use behaviour::{Behaviour, NetworkEvent};
 use handle::Handle;
-
-use msg::NetworkMsg;
 
 const METRICS_PREFIX: &str = "malachite_gossip_consensus";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Channel {
     Consensus,
-    BlockParts,
+    ProposalParts,
 }
 
 impl Channel {
     pub fn all() -> &'static [Channel] {
-        &[Channel::Consensus, Channel::BlockParts]
+        &[Channel::Consensus, Channel::ProposalParts]
     }
 
     pub fn to_topic(self) -> gossipsub::IdentTopic {
@@ -58,7 +52,7 @@ impl Channel {
     pub fn as_str(&self) -> &'static str {
         match self {
             Channel::Consensus => "/consensus",
-            Channel::BlockParts => "/blockparts",
+            Channel::ProposalParts => "/proposal_parts",
         }
     }
 
@@ -71,7 +65,7 @@ impl Channel {
     pub fn from_topic_hash(topic: &gossipsub::TopicHash) -> Option<Self> {
         match topic.as_str() {
             "/consensus" => Some(Channel::Consensus),
-            "/blockparts" => Some(Channel::BlockParts),
+            "/proposal_parts" => Some(Channel::ProposalParts),
             _ => None,
         }
     }
@@ -100,11 +94,18 @@ impl Config {
     }
 }
 
-pub type Event<Ctx> = malachite_consensus::GossipEvent<Ctx>;
+/// An event that can be emitted by the gossip layer
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Event {
+    Listening(Multiaddr),
+    Message(Channel, PeerId, MessageId, Bytes),
+    PeerConnected(PeerId),
+    PeerDisconnected(PeerId),
+}
 
-#[derive_where(Debug)]
-pub enum CtrlMsg<Ctx: Context> {
-    Broadcast(Channel, GossipMsg<Ctx>),
+#[derive(Debug)]
+pub enum CtrlMsg {
+    BroadcastMsg(Channel, Bytes),
     Shutdown,
 }
 
@@ -113,11 +114,11 @@ pub struct State {
     pub peers: HashMap<PeerId, identify::Info>,
 }
 
-pub async fn spawn<Ctx: Context>(
+pub async fn spawn(
     keypair: Keypair,
     config: Config,
     registry: SharedRegistry,
-) -> Result<Handle<Ctx>, BoxError> {
+) -> Result<Handle, BoxError> {
     let mut swarm = registry.with_prefix(METRICS_PREFIX, |registry| -> Result<_, BoxError> {
         Ok(SwarmBuilder::with_existing_identity(keypair)
             .with_tokio()
@@ -149,12 +150,12 @@ pub async fn spawn<Ctx: Context>(
     Ok(Handle::new(tx_ctrl, rx_event, task_handle))
 }
 
-async fn run<Ctx: Context>(
+async fn run(
     config: Config,
     metrics: Metrics,
     mut swarm: swarm::Swarm<Behaviour>,
-    mut rx_ctrl: mpsc::Receiver<CtrlMsg<Ctx>>,
-    tx_event: mpsc::Sender<Event<Ctx>>,
+    mut rx_ctrl: mpsc::Receiver<CtrlMsg>,
+    tx_event: mpsc::Sender<Event>,
 ) {
     if let Err(e) = swarm.listen_on(config.listen_addr.clone()) {
         error!("Error listening on {}: {e}", config.listen_addr);
@@ -190,21 +191,9 @@ async fn run<Ctx: Context>(
     }
 }
 
-async fn handle_ctrl_msg<Ctx: Context>(
-    msg: CtrlMsg<Ctx>,
-    swarm: &mut swarm::Swarm<Behaviour>,
-) -> ControlFlow<()> {
+async fn handle_ctrl_msg(msg: CtrlMsg, swarm: &mut swarm::Swarm<Behaviour>) -> ControlFlow<()> {
     match msg {
-        CtrlMsg::Broadcast(channel, msg) => {
-            let msg = NetworkMsg(msg);
-            let data = match msg.to_network_bytes() {
-                Ok(data) => data,
-                Err(e) => {
-                    error!("Error encoding message {msg:?}: {e}");
-                    return ControlFlow::Continue(());
-                }
-            };
-
+        CtrlMsg::BroadcastMsg(channel, data) => {
             let msg_size = data.len();
 
             let result = swarm
@@ -214,10 +203,13 @@ async fn handle_ctrl_msg<Ctx: Context>(
 
             match result {
                 Ok(message_id) => {
-                    debug!("Broadcasted message {message_id} of {msg_size} bytes");
+                    debug!(
+                        %channel,
+                        "Broadcasted message {message_id} of {msg_size} bytes"
+                    );
                 }
                 Err(e) => {
-                    error!("Error broadcasting message: {e}");
+                    error!(%channel, "Error broadcasting message: {e}");
                 }
             }
 
@@ -228,12 +220,12 @@ async fn handle_ctrl_msg<Ctx: Context>(
     }
 }
 
-async fn handle_swarm_event<Ctx: Context>(
+async fn handle_swarm_event(
     event: SwarmEvent<NetworkEvent>,
     metrics: &Metrics,
-    swarm: &mut swarm::Swarm<Behaviour>,
+    _swarm: &mut swarm::Swarm<Behaviour>,
     state: &mut State,
-    tx_event: &mpsc::Sender<Event<Ctx>>,
+    tx_event: &mpsc::Sender<Event>,
 ) -> ControlFlow<()> {
     if let SwarmEvent::Behaviour(NetworkEvent::GossipSub(e)) = &event {
         metrics.record(e);
@@ -251,13 +243,16 @@ async fn handle_swarm_event<Ctx: Context>(
             }
         }
 
-        SwarmEvent::Behaviour(NetworkEvent::Identify(identify::Event::Sent { peer_id })) => {
+        SwarmEvent::Behaviour(NetworkEvent::Identify(identify::Event::Sent {
+            peer_id, ..
+        })) => {
             trace!("Sent identity to {peer_id}");
         }
 
         SwarmEvent::Behaviour(NetworkEvent::Identify(identify::Event::Received {
             peer_id,
             info,
+            ..
         })) => {
             trace!(
                 "Received identity from {peer_id}: protocol={:?}",
@@ -271,8 +266,6 @@ async fn handle_swarm_event<Ctx: Context>(
                 );
 
                 state.peers.insert(peer_id, info);
-
-                swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
             } else {
                 trace!(
                     "Peer {peer_id} is using incompatible protocol version: {:?}",
@@ -316,10 +309,14 @@ async fn handle_swarm_event<Ctx: Context>(
         }
 
         SwarmEvent::Behaviour(NetworkEvent::GossipSub(gossipsub::Event::Message {
-            propagation_source: peer_id,
             message_id,
             message,
+            ..
         })) => {
+            let Some(peer_id) = message.source else {
+                return ControlFlow::Continue(());
+            };
+
             let Some(channel) = Channel::from_topic_hash(&message.topic) else {
                 trace!(
                     "Received message {message_id} from {peer_id} on different channel: {}",
@@ -335,12 +332,9 @@ async fn handle_swarm_event<Ctx: Context>(
                 message.data.len()
             );
 
-            let Ok(NetworkMsg(gossip_msg)) = NetworkMsg::from_network_bytes(&message.data) else {
-                error!("Error decoding message {message_id} from {peer_id}: invalid format");
-                return ControlFlow::Continue(());
-            };
+            let event = Event::Message(channel, peer_id, message_id, Bytes::from(message.data));
 
-            if let Err(e) = tx_event.send(Event::Message(peer_id, gossip_msg)).await {
+            if let Err(e) = tx_event.send(event).await {
                 error!("Error sending message to handle: {e}");
                 return ControlFlow::Break(());
             }

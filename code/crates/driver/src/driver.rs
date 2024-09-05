@@ -7,6 +7,7 @@ use malachite_common::{
 };
 use malachite_round::input::Input as RoundInput;
 use malachite_round::output::Output as RoundOutput;
+use malachite_round::state::Step::Propose;
 use malachite_round::state::{State as RoundState, Step};
 use malachite_round::state_machine::Info;
 use malachite_vote::keeper::VoteKeeper;
@@ -14,6 +15,7 @@ use malachite_vote::ThresholdParams;
 
 use crate::input::Input;
 use crate::output::Output;
+use crate::proposal_keeper::ProposalKeeper;
 use crate::Error;
 
 /// Driver for the state machine of the Malachite consensus engine at a given height.
@@ -34,6 +36,9 @@ where
     /// The validator set at the current height
     pub validator_set: Ctx::ValidatorSet,
 
+    /// The proposals to decide on.
+    pub proposal_keeper: ProposalKeeper<Ctx>,
+
     /// The vote keeper.
     pub vote_keeper: VoteKeeper<Ctx>,
 
@@ -42,9 +47,6 @@ where
 
     /// The proposer for the current round, None for round nil.
     pub proposer: Option<Ctx::Address>,
-
-    /// The proposal to decide on, if any.
-    pub proposal: Option<Ctx::Proposal>,
 
     /// The pending input to be processed next, if any.
     pub pending_input: Option<(Round, RoundInput<Ctx>)>,
@@ -58,6 +60,8 @@ where
     ///
     /// This instance is only valid for a single height
     /// and should be discarded and re-created for the next height.
+    ///
+    /// TODO: Consider wrapping the validator set in a Arc to avoid cloning
     pub fn new(
         ctx: Ctx,
         height: Ctx::Height,
@@ -65,7 +69,8 @@ where
         address: Ctx::Address,
         threshold_params: ThresholdParams,
     ) -> Self {
-        let vote_keeper = VoteKeeper::new(validator_set.total_voting_power(), threshold_params);
+        let proposal_keeper = ProposalKeeper::new(validator_set.clone());
+        let vote_keeper = VoteKeeper::new(validator_set.clone(), threshold_params);
         let round_state = RoundState::new(height, Round::Nil);
 
         Self {
@@ -73,10 +78,10 @@ where
             address,
             threshold_params,
             validator_set,
+            proposal_keeper,
             vote_keeper,
             round_state,
             proposer: None,
-            proposal: None,
             pending_input: None,
         }
     }
@@ -84,17 +89,18 @@ where
     /// Reset votes, round state, pending input
     /// and move to new height with the given validator set.
     pub fn move_to_height(&mut self, height: Ctx::Height, validator_set: Ctx::ValidatorSet) {
+        // Reset the proposal keeper
+        let proposal_keeper = ProposalKeeper::new(validator_set.clone());
         // Reset the vote keeper
-        let vote_keeper =
-            VoteKeeper::new(validator_set.total_voting_power(), self.threshold_params);
+        let vote_keeper = VoteKeeper::new(validator_set.clone(), self.threshold_params);
 
         // Reset the round state
         let round_state = RoundState::new(height, Round::Nil);
 
         self.validator_set = validator_set;
+        self.proposal_keeper = proposal_keeper;
         self.vote_keeper = vote_keeper;
         self.round_state = round_state;
-        self.proposal = None;
         self.pending_input = None;
     }
 
@@ -111,6 +117,11 @@ where
     /// Return the current step within the round we are at.
     pub fn step(&self) -> Step {
         self.round_state.step
+    }
+
+    /// Returns true if the current step is propose.
+    pub fn step_is_propose(&self) -> bool {
+        self.round_state.step == Propose
     }
 
     /// Return a reference to the votekeper
@@ -249,23 +260,21 @@ where
             });
         }
 
-        let validator = self
+        if self
             .validator_set
             .get_by_address(vote.validator_address())
-            .ok_or_else(|| Error::ValidatorNotFound(vote.validator_address().clone()))?;
+            .is_none()
+        {
+            return Err(Error::ValidatorNotFound(vote.validator_address().clone()));
+        }
 
         let vote_round = vote.round();
-        let current_round = self.round();
 
-        let vote_output =
-            self.vote_keeper
-                .apply_vote(vote, validator.voting_power(), current_round);
-
-        let Some(vote_output) = vote_output else {
+        let Some(output) = self.vote_keeper.apply_vote(vote, self.round()) else {
             return Ok(None);
         };
 
-        let round_input = self.multiplex_vote_threshold(vote_output);
+        let round_input = self.multiplex_vote_threshold(output, vote_round);
         self.apply_input(vote_round, round_input)
     }
 
@@ -322,8 +331,8 @@ where
         f.debug_struct("Driver")
             .field("address", &self.address)
             .field("validator_set", &self.validator_set)
+            .field("proposal", &self.proposal_keeper)
             .field("votes", &self.vote_keeper)
-            .field("proposal", &self.proposal)
             .field("round_state", &self.round_state)
             .finish()
     }

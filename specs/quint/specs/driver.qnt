@@ -25,8 +25,8 @@ module driver {
         certificates: Set[Certificate], // we store the Polka and Commits we have seen
     }
 
-    pure def initDriver(v: Address, vs: Address -> Weight): DriverState = {
-        bk: initBookKeeper(0, vs.mapSumValues()),
+    pure def initDriver(v: Address, vs: ValidatorSet): DriverState = {
+        bk: initBookKeeper(0, vs),
         cs: initConsensusState(v, 0),
         proposals: Set(),
         valset: vs,

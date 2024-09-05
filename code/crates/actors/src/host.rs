@@ -1,11 +1,10 @@
 use std::time::Duration;
 
 use derive_where::derive_where;
+use libp2p::PeerId;
 use ractor::{ActorRef, RpcReplyPort};
 
 use malachite_common::{Context, Round, SignedVote};
-
-use crate::consensus::ConsensusRef;
 
 #[derive_where(Clone, Debug, PartialEq, Eq)]
 pub struct LocallyProposedValue<Ctx: Context> {
@@ -25,34 +24,36 @@ impl<Ctx: Context> LocallyProposedValue<Ctx> {
 }
 
 /// A value to propose that has just been received.
-pub type ReceivedProposedValue<Ctx> = malachite_consensus::Block<Ctx>;
+pub use malachite_consensus::ProposedValue;
+
+use crate::util::streaming::StreamMessage;
 
 /// A reference to the host actor.
 pub type HostRef<Ctx> = ActorRef<HostMsg<Ctx>>;
 
 /// Messages that need to be handled by the host actor.
 pub enum HostMsg<Ctx: Context> {
+    /// Consensus has started a new round.
+    StartRound {
+        height: Ctx::Height,
+        round: Round,
+        proposer: Ctx::Address,
+    },
+
     /// Request to build a local block/value from Driver
     GetValue {
         height: Ctx::Height,
         round: Round,
         timeout_duration: Duration,
-        consensus: ConsensusRef<Ctx>,
         address: Ctx::Address,
         reply_to: RpcReplyPort<LocallyProposedValue<Ctx>>,
     },
 
-    /// BlockPart received <-- consensus <-- gossip
-    ReceivedBlockPart {
-        block_part: Ctx::BlockPart,
-        reply_to: RpcReplyPort<ReceivedProposedValue<Ctx>>,
-    },
-
-    /// Retrieve a block/value for which all parts have been received
-    GetReceivedValue {
-        height: Ctx::Height,
-        round: Round,
-        reply_to: RpcReplyPort<Option<ReceivedProposedValue<Ctx>>>,
+    /// ProposalPart received <-- consensus <-- gossip
+    ReceivedProposalPart {
+        from: PeerId,
+        part: StreamMessage<Ctx::ProposalPart>,
+        reply_to: RpcReplyPort<ProposedValue<Ctx>>,
     },
 
     /// Get the validator set at a given height

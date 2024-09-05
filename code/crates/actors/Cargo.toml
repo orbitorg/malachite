@@ -17,10 +17,12 @@ malachite-gossip-consensus.workspace = true
 malachite-gossip-mempool.workspace   = true
 malachite-metrics.workspace          = true
 malachite-node.workspace             = true
+malachite-proto.workspace            = true
 malachite-vote.workspace             = true
 
 async-trait        = { workspace = true }
 derive-where       = { workspace = true }
+eyre               = { workspace = true }
 libp2p             = { workspace = true }
 ractor             = { workspace = true, features = ["async-trait"] }
 tokio              = { workspace = true, features = ["full"] }

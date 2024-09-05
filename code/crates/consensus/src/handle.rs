@@ -1,5 +1,5 @@
 use async_recursion::async_recursion;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 use malachite_common::*;
 use malachite_driver::Input as DriverInput;
@@ -12,8 +12,9 @@ use crate::gen::Co;
 use crate::msg::Msg;
 use crate::perform;
 use crate::state::State;
-use crate::types::{Block, GossipEvent, GossipMsg, PeerId, SignedMessage};
+use crate::types::{GossipMsg, ProposedValue};
 use crate::util::pretty::{PrettyProposal, PrettyVal, PrettyVote};
+use crate::ConsensusMsg;
 
 pub async fn handle<Ctx>(
     co: Co<Ctx>,
@@ -39,12 +40,15 @@ where
 {
     match msg {
         Msg::StartHeight(height) => start_height(co, state, metrics, height).await,
-        Msg::GossipEvent(event) => on_gossip_event(co, state, metrics, event).await,
+        Msg::Vote(vote) => on_vote(co, state, metrics, vote).await,
+        Msg::Proposal(proposal) => on_proposal(co, state, metrics, proposal).await,
         Msg::ProposeValue(height, round, value) => {
             propose_value(co, state, metrics, height, round, value).await
         }
         Msg::TimeoutElapsed(timeout) => on_timeout_elapsed(co, state, metrics, timeout).await,
-        Msg::BlockReceived(block) => on_received_block(co, state, metrics, block).await,
+        Msg::ReceivedProposedValue(block) => {
+            on_received_proposed_value(co, state, metrics, block).await
+        }
     }
 }
 
@@ -58,22 +62,23 @@ where
     Ctx: Context,
 {
     let round = Round::new(0);
-    info!("Starting new height {height} at round {round}");
+    info!(%height, "Starting new height");
 
     let proposer = state.get_proposer(height, round).cloned()?;
-    info!("Proposer for height {height} and round {round}: {proposer}");
 
     apply_driver_input(
         co,
         state,
         metrics,
-        DriverInput::NewRound(height, round, proposer),
+        DriverInput::NewRound(height, round, proposer.clone()),
     )
     .await?;
 
     metrics.block_start();
     metrics.height.set(height.as_u64() as i64);
     metrics.round.set(round.as_i64());
+
+    perform!(co, Effect::StartRound(height, round, proposer));
 
     replay_pending_msgs(co, state, metrics).await?;
 
@@ -145,8 +150,12 @@ where
     Ctx: Context,
 {
     match &input {
-        DriverInput::NewRound(_, _, _) => {
+        DriverInput::NewRound(height, round, proposer) => {
+            metrics.round.set(round.as_i64());
+
+            info!(%height, %round, %proposer, "Starting new round");
             perform!(co, Effect::CancelAllTimeouts);
+            perform!(co, Effect::StartRound(*height, *round, proposer.clone()));
         }
 
         DriverInput::ProposeValue(round, _) => {
@@ -164,16 +173,6 @@ where
                 return Ok(());
             }
 
-            if proposal.round() != state.driver.round() {
-                warn!(
-                    "Ignoring proposal for round {}, current round: {}",
-                    proposal.round(),
-                    state.driver.round()
-                );
-
-                return Ok(());
-            }
-
             perform!(
                 co,
                 Effect::CancelTimeout(Timeout::propose(proposal.round()))
@@ -186,16 +185,6 @@ where
                     "Ignoring vote for height {}, current height: {}",
                     vote.height(),
                     state.driver.height()
-                );
-
-                return Ok(());
-            }
-
-            if vote.round() != state.driver.round() {
-                warn!(
-                    "Ignoring vote for round {}, current round: {}",
-                    vote.round(),
-                    state.driver.round()
                 );
 
                 return Ok(());
@@ -219,7 +208,14 @@ where
     // If the step has changed, update the metrics
     if prev_step != new_step {
         debug!("Transitioned from {prev_step:?} to {new_step:?}");
-
+        if let Some(valid) = &state.driver.round_state.valid {
+            if state.driver.step_is_propose() {
+                info!(
+                    "We enter Propose with a valid value from round {}",
+                    valid.round
+                );
+            }
+        }
         metrics.step_end(prev_step);
         metrics.step_start(new_step);
     }
@@ -256,11 +252,7 @@ where
 {
     match output {
         DriverOutput::NewRound(height, round) => {
-            info!("Starting round {round} at height {height}");
-            metrics.round.set(round.as_i64());
-
             let proposer = state.get_proposer(height, round)?;
-            info!("Proposer for height {height} and round {round}: {proposer}");
 
             apply_driver_input(
                 co,
@@ -289,7 +281,7 @@ where
                 co,
                 state,
                 metrics,
-                DriverInput::Proposal(signed_proposal.proposal, Validity::Valid),
+                DriverInput::Proposal(signed_proposal.message, Validity::Valid),
             )
             .await
         }
@@ -306,7 +298,7 @@ where
 
             perform!(co, Effect::Broadcast(GossipMsg::Vote(signed_vote.clone()),));
 
-            apply_driver_input(co, state, metrics, DriverInput::Vote(signed_vote.vote)).await
+            apply_driver_input(co, state, metrics, DriverInput::Vote(signed_vote.message)).await
         }
 
         DriverOutput::Decide(round, value) => {
@@ -358,7 +350,7 @@ where
 
     if state.driver.round() != round {
         warn!(
-            "Ignoring proposal for round {round}, current round: {}",
+            "Ignoring propose value for round {round}, current round: {}",
             state.driver.round()
         );
 
@@ -408,235 +400,201 @@ where
     Ok(())
 }
 
-async fn on_gossip_event<Ctx>(
+async fn on_vote<Ctx>(
     co: &Co<Ctx>,
     state: &mut State<Ctx>,
     metrics: &Metrics,
-    event: GossipEvent<Ctx>,
+    signed_vote: SignedVote<Ctx>,
 ) -> Result<(), Error<Ctx>>
 where
     Ctx: Context,
 {
-    match event {
-        GossipEvent::Listening(addr) => {
-            info!("Listening on {addr}");
-            Ok(())
-        }
+    let consensus_height = state.driver.height();
+    let consensus_round = state.driver.round();
+    let vote_height = signed_vote.height();
+    let validator_address = signed_vote.validator_address();
 
-        GossipEvent::PeerConnected(peer_id) => {
-            if !state.connected_peers.insert(peer_id) {
-                // We already saw that peer, ignoring...
-                return Ok(());
-            }
+    // Queue messages if driver is not initialized, or if they are for higher height.
+    // Process messages received for the current height.
+    // Drop all others.
+    if consensus_round == Round::Nil {
+        debug!(
+            consensus.height = %consensus_height,
+            vote.height = %vote_height,
+            validator = %validator_address,
+            "Received vote at round -1, queuing for later"
+        );
 
-            info!("Connected to peer {peer_id}");
-
-            metrics.connected_peers.inc();
-
-            if state.connected_peers.len() == state.driver.validator_set.count() - 1 {
-                info!(
-                    "Enough peers ({}) connected to start consensus",
-                    state.connected_peers.len()
-                );
-
-                start_height(co, state, metrics, state.driver.height()).await?;
-            }
-
-            Ok(())
-        }
-
-        GossipEvent::PeerDisconnected(peer_id) => {
-            info!("Disconnected from peer {peer_id}");
-
-            if state.connected_peers.remove(&peer_id) {
-                metrics.connected_peers.dec();
-
-                // TODO: pause/stop consensus, if necessary
-            }
-
-            Ok(())
-        }
-
-        GossipEvent::Message(from, msg) => {
-            let Some(msg_height) = msg.msg_height() else {
-                trace!("Received message without height, dropping");
-                return Ok(());
-            };
-
-            // Queue messages if driver is not initialized, or if they are for higher height.
-            // Process messages received for the current height.
-            // Drop all others.
-            if state.driver.round() == Round::Nil {
-                debug!("Received gossip event at round -1, queuing for later");
-
-                state
-                    .msg_queue
-                    .push_back(Msg::GossipEvent(GossipEvent::Message(from, msg)));
-            } else if state.driver.height() < msg_height {
-                debug!("Received gossip event for higher height, queuing for later");
-
-                state
-                    .msg_queue
-                    .push_back(Msg::GossipEvent(GossipEvent::Message(from, msg)));
-            } else if state.driver.height() == msg_height {
-                on_gossip_msg(co, state, metrics, from, msg).await?;
-            }
-
-            Ok(())
-        }
+        state.msg_queue.push_back(Msg::Vote(signed_vote));
+        return Ok(());
     }
+
+    if consensus_height < vote_height {
+        debug!(
+            consensus.height = %consensus_height,
+            vote.height = %vote_height,
+            validator = %validator_address,
+            "Received vote for higher height, queuing for later"
+        );
+
+        state.msg_queue.push_back(Msg::Vote(signed_vote));
+        return Ok(());
+    }
+
+    if consensus_height > vote_height {
+        debug!(
+            consensus.height = %consensus_height,
+            vote.height = %vote_height,
+            validator = %validator_address,
+            "Received vote for lower height, dropping"
+        );
+
+        return Ok(());
+    }
+
+    info!(
+        consensus.height = %consensus_height,
+        vote.height = %vote_height,
+        validator = %validator_address,
+        "Received vote: {}", PrettyVote::<Ctx>(&signed_vote.message)
+    );
+
+    let Some(validator) = state.driver.validator_set.get_by_address(validator_address) else {
+        warn!(
+            consensus.height = %consensus_height,
+            vote.height = %vote_height,
+            validator = %validator_address,
+            "Received vote from unknown validator"
+        );
+
+        return Ok(());
+    };
+
+    let signed_msg = signed_vote.clone().map(ConsensusMsg::Vote);
+    let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
+    if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
+        warn!(
+            validator = %validator_address,
+            "Received invalid vote: {}", PrettyVote::<Ctx>(&signed_vote.message)
+        );
+
+        return Ok(());
+    }
+
+    // Store the non-nil Precommits.
+    if signed_vote.vote_type() == VoteType::Precommit && signed_vote.value().is_val() {
+        state.store_signed_precommit(signed_vote.clone());
+    }
+
+    apply_driver_input(co, state, metrics, DriverInput::Vote(signed_vote.message)).await?;
+
+    Ok(())
 }
 
-async fn on_gossip_msg<Ctx>(
+async fn on_proposal<Ctx>(
     co: &Co<Ctx>,
     state: &mut State<Ctx>,
     metrics: &Metrics,
-    from: PeerId,
-    msg: GossipMsg<Ctx>,
+    signed_proposal: SignedProposal<Ctx>,
 ) -> Result<(), Error<Ctx>>
 where
     Ctx: Context,
 {
-    match msg {
-        GossipMsg::Vote(signed_vote) => {
-            let validator_address = signed_vote.validator_address();
+    let proposal_height = signed_proposal.height();
+    let proposal_round = signed_proposal.round();
 
-            info!(%from, validator = %validator_address, "Received vote: {}", PrettyVote::<Ctx>(&signed_vote.vote));
+    // Queue messages if driver is not initialized, or if they are for higher height.
+    // Process messages received for the current height.
+    // Drop all others.
+    if state.driver.round() == Round::Nil {
+        debug!("Received proposal at round -1, queuing for later");
+        state.msg_queue.push_back(Msg::Proposal(signed_proposal));
+        return Ok(());
+    }
 
-            if signed_vote.vote.height() != state.driver.height() {
-                warn!(
-                    %from, validator = %validator_address,
-                    "Ignoring vote for height {}, current height: {}",
-                    signed_vote.vote.height(),
-                    state.driver.height()
-                );
+    if state.driver.height() < proposal_height {
+        debug!("Received proposal for higher height, queuing for later");
+        state.msg_queue.push_back(Msg::Proposal(signed_proposal));
+        return Ok(());
+    }
 
-                return Ok(());
-            }
+    if state.driver.height() > proposal_height {
+        debug!("Received proposal for lower height, dropping");
+        return Ok(());
+    }
 
-            let Some(validator) = state.driver.validator_set.get_by_address(validator_address)
-            else {
-                warn!(
-                    %from, validator = %validator_address,
-                    "Received vote from unknown validator"
-                );
+    let proposer_address = signed_proposal.validator_address();
 
-                return Ok(());
-            };
+    info!(%proposer_address, "Received proposal: {}", PrettyProposal::<Ctx>(&signed_proposal.message));
 
-            let signed_msg = SignedMessage::Vote(signed_vote.clone());
-            let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
-            if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
-                warn!(
-                    %from, validator = %validator_address,
-                    "Received invalid vote: {}", PrettyVote::<Ctx>(&signed_vote.vote)
-                );
+    let Some(proposer) = state.driver.validator_set.get_by_address(proposer_address) else {
+        warn!(%proposer_address, "Received proposal from unknown validator");
+        return Ok(());
+    };
 
-                return Ok(());
-            }
+    let expected_proposer = state.get_proposer(proposal_height, proposal_round).unwrap();
 
-            // Store the non-nil Precommits.
-            if signed_vote.vote.vote_type() == VoteType::Precommit
-                && signed_vote.vote.value().is_val()
-            {
-                state.store_signed_precommit(signed_vote.clone());
-            }
+    if expected_proposer != proposer_address {
+        warn!(%proposer_address, % proposer_address, "Received proposal from a non-proposer");
+        return Ok(());
+    };
 
-            apply_driver_input(co, state, metrics, DriverInput::Vote(signed_vote.vote)).await?;
+    if proposal_height != state.driver.height() {
+        warn!(
+            "Ignoring proposal for height {proposal_height}, current height: {}",
+            state.driver.height()
+        );
+
+        return Ok(());
+    }
+
+    let signed_msg = signed_proposal.clone().map(ConsensusMsg::Proposal);
+    let verify_sig = Effect::VerifySignature(signed_msg, proposer.public_key().clone());
+    if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
+        error!(
+            "Received invalid signature for proposal: {}",
+            PrettyProposal::<Ctx>(&signed_proposal.message)
+        );
+
+        return Ok(());
+    }
+
+    // Check if a complete block was received for the proposal POL round if defined or proposal round otherwise.
+    let proposal_pol_round = signed_proposal.pol_round();
+    let block_round = if proposal_pol_round.is_nil() {
+        proposal_round
+    } else {
+        proposal_pol_round
+    };
+
+    let received_block = state
+        .received_blocks
+        .iter()
+        .find(|(height, round, ..)| height == &proposal_height && round == &block_round);
+
+    match received_block {
+        Some((_height, _round, _value, valid)) => {
+            apply_driver_input(
+                co,
+                state,
+                metrics,
+                DriverInput::Proposal(signed_proposal.message.clone(), *valid),
+            )
+            .await?;
         }
+        None => {
+            // Store the proposal and wait for all proposal parts
+            info!(
+                height = %signed_proposal.height(),
+                round = %signed_proposal.round(),
+                "Received proposal before all proposal parts, storing it"
+            );
 
-        GossipMsg::Proposal(signed_proposal) => {
-            let validator = signed_proposal.proposal.validator_address();
-
-            info!(%from, %validator, "Received proposal: {}", PrettyProposal::<Ctx>(&signed_proposal.proposal));
-
-            let Some(validator) = state.driver.validator_set.get_by_address(validator) else {
-                warn!(%from, %validator, "Received proposal from unknown validator");
-                return Ok(());
-            };
-
-            let proposal = &signed_proposal.proposal;
-            let proposal_height = proposal.height();
-            let proposal_round = proposal.round();
-
-            if proposal_height != state.driver.height() {
-                warn!(
-                    "Ignoring proposal for height {proposal_height}, current height: {}",
-                    state.driver.height()
-                );
-
-                return Ok(());
-            }
-
-            if proposal_round != state.driver.round() {
-                warn!(
-                    "Ignoring proposal for round {proposal_round}, current round: {}",
-                    state.driver.round()
-                );
-
-                return Ok(());
-            }
-
-            let signed_msg = SignedMessage::Proposal(signed_proposal.clone());
-            let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
-            if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
-                error!(
-                    "Received invalid signature for proposal: {}",
-                    PrettyProposal::<Ctx>(&signed_proposal.proposal)
-                );
-
-                return Ok(());
-            }
-
-            let received_block = state
-                .received_blocks
-                .iter()
-                .find(|(height, round, ..)| height == &proposal_height && round == &proposal_round);
-
-            match received_block {
-                Some((_height, _round, _value, valid)) => {
-                    apply_driver_input(
-                        co,
-                        state,
-                        metrics,
-                        DriverInput::Proposal(proposal.clone(), *valid),
-                    )
-                    .await?;
-                }
-                None => {
-                    // Store the proposal and wait for all block parts
-                    // TODO: or maybe integrate with receive-proposal() here? will this block until all parts are received?
-
-                    info!(
-                        height = %proposal.height(),
-                        round = %proposal.round(),
-                        "Received proposal before all block parts, storing it"
-                    );
-
-                    // FIXME: Avoid mutating the driver state directly
-                    state.driver.proposal = Some(proposal.clone());
-                }
-            }
-        }
-
-        GossipMsg::BlockPart(signed_block_part) => {
-            let validator_address = signed_block_part.validator_address();
-
-            let Some(validator) = state.driver.validator_set.get_by_address(validator_address)
-            else {
-                warn!(%from, %validator_address, "Received block part from unknown validator");
-                return Ok(());
-            };
-
-            let signed_msg = SignedMessage::BlockPart(signed_block_part.clone());
-            let verify_sig = Effect::VerifySignature(signed_msg, validator.public_key().clone());
-            if !perform!(co, verify_sig, Resume::SignatureValidity(valid) => valid) {
-                warn!(%from, validator = %validator_address, "Received invalid block part: {signed_block_part:?}");
-                return Ok(());
-            }
-
-            // TODO: Verify that the proposal was signed by the proposer for the height and round, drop otherwise.
-            perform!(co, Effect::ReceivedBlockPart(signed_block_part.block_part));
+            // TODO - we should store the validity but we don't know it yet
+            state
+                .driver
+                .proposal_keeper
+                .apply_proposal(signed_proposal.message.clone());
         }
     }
 
@@ -655,7 +613,7 @@ where
     let height = state.driver.height();
     let round = state.driver.round();
 
-    if timeout.round != round {
+    if timeout.round != round && timeout.step != TimeoutStep::Commit {
         debug!(
             "Ignoring timeout for round {} at height {}, current round: {round}",
             timeout.round, height
@@ -675,37 +633,52 @@ where
     Ok(())
 }
 
-async fn on_received_block<Ctx>(
+#[tracing::instrument(
+    skip_all,
+    fields(
+        height = %proposed_value.height,
+        round = %proposed_value.round,
+        validity = ?proposed_value.validity,
+        id = %proposed_value.value.id()
+    )
+)]
+async fn on_received_proposed_value<Ctx>(
     co: &Co<Ctx>,
     state: &mut State<Ctx>,
     metrics: &Metrics,
-    block: Block<Ctx>,
+    proposed_value: ProposedValue<Ctx>,
 ) -> Result<(), Error<Ctx>>
 where
     Ctx: Context,
 {
-    let Block {
+    let ProposedValue {
         height,
         round,
         value,
         validity,
         ..
-    } = block;
-
-    info!(%height, %round, "Received block: {}", value.id());
+    } = proposed_value;
 
     // Store the block and validity information. It will be removed when a decision is reached for that height.
     state
         .received_blocks
         .push((height, round, value.clone(), validity));
 
-    if let Some(proposal) = state.driver.proposal.as_ref() {
-        if height != proposal.height() || round != proposal.round() {
-            // The block we received is not for the current proposal, ignoring
+    if let Some(proposal) = state.driver.proposal_keeper.get_proposal_for_round(round) {
+        debug!(
+            proposal.height = %proposal.height(),
+            proposal.round = %proposal.round(),
+            "We have a proposal for this round, checking..."
+        );
+
+        if height != proposal.height() {
+            // The value we received is not for the current proposal, ignoring
+            debug!("Proposed value is not for the current proposal, ignoring...");
             return Ok(());
         }
 
         let validity = Validity::from_bool(proposal.value() == &value && validity.is_valid());
+        debug!("Applying proposal with validity {validity:?}");
 
         apply_driver_input(
             co,
@@ -714,6 +687,8 @@ where
             DriverInput::Proposal(proposal.clone(), validity),
         )
         .await?;
+    } else {
+        debug!("No proposal for this round yet, stored proposed value for later");
     }
 
     Ok(())

@@ -1,12 +1,12 @@
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
-use malachite_common::proto;
 use malachite_proto::{Error as ProtoError, Protobuf};
 
+use crate::proto;
 use crate::signing::PublicKey;
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Address(
     #[serde(
@@ -30,6 +30,10 @@ impl Address {
         let mut address = [0; Self::LENGTH];
         address.copy_from_slice(&hash[..Self::LENGTH]);
         Self(address)
+    }
+
+    pub fn into_inner(self) -> [u8; Self::LENGTH] {
+        self.0
     }
 }
 

@@ -1,8 +1,6 @@
 use derive_where::derive_where;
-use malachite_common::{
-    BlockPart, Context, Proposal, Round, SignedBlockPart, SignedProposal, SignedVote, Validity,
-    Vote,
-};
+
+use malachite_common::{Context, Proposal, Round, SignedProposal, SignedVote, Validity, Vote};
 
 pub use libp2p_identity::PeerId;
 pub use multiaddr::Multiaddr;
@@ -12,39 +10,27 @@ pub use multiaddr::Multiaddr;
 pub enum GossipMsg<Ctx: Context> {
     Vote(SignedVote<Ctx>),
     Proposal(SignedProposal<Ctx>),
-    BlockPart(SignedBlockPart<Ctx>),
-}
-
-/// A signed consensus message.
-#[derive_where(Clone, Debug, PartialEq, Eq)]
-pub enum SignedMessage<Ctx: Context> {
-    Vote(SignedVote<Ctx>),
-    Proposal(SignedProposal<Ctx>),
-    BlockPart(SignedBlockPart<Ctx>),
 }
 
 impl<Ctx: Context> GossipMsg<Ctx> {
-    pub fn msg_height(&self) -> Option<Ctx::Height> {
+    pub fn msg_height(&self) -> Ctx::Height {
         match self {
-            GossipMsg::Vote(msg) => Some(msg.vote.height()),
-            GossipMsg::Proposal(msg) => Some(msg.proposal.height()),
-            GossipMsg::BlockPart(msg) => Some(msg.block_part.height()),
+            GossipMsg::Vote(msg) => msg.height(),
+            GossipMsg::Proposal(msg) => msg.height(),
         }
     }
 }
 
-/// An event that can be emitted by the gossip layer
+/// A message that can be sent by the consensus layer
 #[derive_where(Clone, Debug, PartialEq, Eq)]
-pub enum GossipEvent<Ctx: Context> {
-    Listening(Multiaddr),
-    Message(PeerId, GossipMsg<Ctx>),
-    PeerConnected(PeerId),
-    PeerDisconnected(PeerId),
+pub enum ConsensusMsg<Ctx: Context> {
+    Vote(Ctx::Vote),
+    Proposal(Ctx::Proposal),
 }
 
-/// An abstract block, ie. a value proposed by a validator
+/// A value proposed by a validator
 #[derive_where(Clone, Debug, PartialEq, Eq)]
-pub struct Block<Ctx: Context> {
+pub struct ProposedValue<Ctx: Context> {
     pub height: Ctx::Height,
     pub round: Round,
     pub validator_address: Ctx::Address,
