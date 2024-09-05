@@ -84,7 +84,7 @@ module votekeeper {
     pure def newVoteCount(total: Weight): VoteCount =
         { totalWeight: total, valuesWeights: Map(), votesAddresses: Set(), receivedVotes: Set() }
 
-    // Returns true if weight > 2/3 * total (certificate: at least f+1 correct)
+    // Returns true if weight > 2/3 * total (quorum: at least f+1 correct)
     pure def isQuorum(weight: Weight, total: Weight): bool =
         3 * weight > 2 * total
 
@@ -95,19 +95,19 @@ module votekeeper {
         assert(isQuorum(5,6) == true),
     }
 
-    // True iff the vote count has a certificate on a specific value.
+    // True iff the vote count has a quorum on a specific value.
     pure def hasQuorumOnValue(voteCount: VoteCount, value: Value): bool =
         isQuorum(voteCount.valuesWeights.getOrElse(value, 0), voteCount.totalWeight)
 
-    // True iff the vote count has a certificate on value nil.
+    // True iff the vote count has a quorum on value nil.
     pure def hasQuorumOnNil(voteCount: VoteCount): bool =
         hasQuorumOnValue(voteCount, Nil)
 
-    // True iff the vote count has a certificate on any value.
+    // True iff the vote count has a quorum on any value.
     pure def hasQuorumOnAny(voteCount: VoteCount): bool =
         isQuorum(voteCount.valuesWeights.mapSumValues(), voteCount.totalWeight)
 
-    // Returns true if weight > 1/3 * total (small certificate: at least one correct)
+    // Returns true if weight > 1/3 * total (small quorum: at least one correct)
     pure def isSkip(weight: Weight, total: Weight): bool =
         3 * weight > total
 
@@ -160,10 +160,10 @@ module votekeeper {
         }
 
     // Given a voteCount and a value, the function returns:
-    // - A threshold Value if there is a certificate for the given value;
-    // - A threshold Nil if there is a certificate for the nil and no certificate for the value;
-    // - A threshold Any if there is no certificate for the value or nil and there is a certificate for any (including nil);
-    // - A threshold Unreached otherwise indicating that no certificate has been yet reached.
+    // - A threshold Value if there is a quorum for the given value;
+    // - A threshold Nil if there is a quorum for the nil and no quorum for the value;
+    // - A threshold Any if there is no quorum for the value or nil and there is a quorum for any (including nil);
+    // - A threshold Unreached otherwise indicating that no quorum has been yet reached.
     pure def computeThreshold(voteCount: VoteCount, value: Value): Threshold =
         if (voteCount.hasQuorumOnValue(value)) {
             match value {
