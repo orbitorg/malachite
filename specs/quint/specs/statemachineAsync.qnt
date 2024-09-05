@@ -224,7 +224,7 @@ action deliver(v: Address) : bool = any {
     deliverProposal(v, prop),
     nondet vote = oneOf(voteBuffer.get(v).union(AllFaultyVotes))
     deliverVote(v, vote),
-    // deliverSomeCertificate(v) // TODO: add later and fix potentially failing tests
+    deliverSomeCertificate(v),
 }
 
 action step = {

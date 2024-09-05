@@ -300,7 +300,7 @@ module driver {
             callConsensus(es, es.bk, NoCertificate, NewRoundCInput(r)) 
 
     // We do this when we have decided
-    pure def handleDecided(es: DriverState, res: ConsensusOutput, value: Value): DriverResult =
+    pure def handleDecided(es: DriverState, res: ConsensusOutput, value: Value, c: Certificate): DriverResult =
         // here we call consensus to set a new height, that is, to initialize the state machine
         // and then we call skip to start round 0
 
@@ -312,7 +312,7 @@ module driver {
         val s1 = callConsensus(s, s.bk, NewHeightCInput(s.cs.height + 1))  
         skip (s1._1, 0) 
     */
-        toDriverOutputNoCertificate({ ...es, chain: es.chain.append(value) }, res)
+        toDriverOutput({ ...es, chain: es.chain.append(value) }, res, c)
 
     // take input out of pending inputs and then call consensus with that input
     // We do this when the driver is asked to work on pending events
@@ -340,7 +340,7 @@ module driver {
                 val newState = res.ds
                 val conOut = res.out
                 match conOut {
-                    | DecidedOutput(v) => handleDecided(newState, conOut, v)
+                    | DecidedOutput(v) => handleDecided(newState, conOut, v, NoCertificate)
                     | SkipRoundOutput(r) => handleSkip(newState, r)
                     | _ => toDriverOutputNoCertificate(newState, conOut)
                 }
@@ -356,8 +356,9 @@ module driver {
                 }
                 val newState2 = cons_res.ds
                 val conOut = cons_res.out
+                val conCert = cons_res.certificate
                 match conOut {
-                    | DecidedOutput(v) => handleDecided(newState2, conOut, v)
+                    | DecidedOutput(v) => handleDecided(newState2, conOut, v, conCert)
                     | SkipRoundOutput(r) => handleSkip(newState2, r)
                     | _ => toDriverOutput(newState2, conOut, cert) 
                 }
@@ -374,8 +375,9 @@ module driver {
                 }
                 val newState2 = cons_res.ds
                 val conOut = cons_res.out
+                val conCert = cons_res.certificate
                 match conOut {
-                    | DecidedOutput(v) => handleDecided(newState2, conOut, v)
+                    | DecidedOutput(v) => handleDecided(newState2, conOut, v, conCert)
                     | SkipRoundOutput(r) => handleSkip(newState2, r)
                     | _ => toDriverOutput(newState2, conOut, cert)
                 }

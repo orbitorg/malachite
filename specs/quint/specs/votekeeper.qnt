@@ -364,14 +364,12 @@ pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], certifica
 // This takes a commit, checks for evidence, and overwrites the roundVotes with the new commit
 // TODO: add test for applyCommit with/without evidence
 
-// TODO: rename Certificate to Certificate
-// TODO: Get certificate function. (Test whether the voting power is sufficient)
 pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificateWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
     if (not(validCertificate(certificate, certificateWeight, keeper)))
         { bookkeeper: keeper, output: NoVKOutput }
     else
         // getting the roundVotes that are touched by the commit
-        val round = certificate.certificateRound() // TODO: in refactor check it is a commit
+        val round = certificate.certificateRound() 
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.totalWeight))
         // overwrite roundvotes with certificate
         val rvEv = roundVotesAndEvidenceFromCertificate(certificate, certificateWeight, roundVotes)
