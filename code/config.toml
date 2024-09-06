@@ -92,10 +92,19 @@ protocol = "gossipsub"
 # Override with MALACHITE__MEMPOOL__MAX_TX_COUNT env variable
 max_tx_count = 10000
 
-# Maximum number of transactions to gossip at once in a batch. 
+# Maximum number of transactions to gossip at once in a batch.
 # If set to 0, mempool does not gossip the transactions.
 # Override with MALACHITE__MEMPOOL__GOSSIP_BATCH_SIZE
 gossip_batch_size = 100
+
+# The type of pub-sub protocol to use for the mempool
+# !!! Does not have any effect yet !!!
+#
+# Possible values:
+# - "gossipsub": Use the GossipSub v1.1 protocol (gossip, recommended)
+# - "floodsub": Use the FloodSub protocol (no gossip, experimental)
+# Override with MALACHITE__MEMPOOL__P2P__PROTOCOL env variable
+protocol = "gossipsub"
 
 #######################################################
 ###       Mempool P2P Configuration Options       ###
