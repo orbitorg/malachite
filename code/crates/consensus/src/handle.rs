@@ -40,6 +40,7 @@ where
 {
     match msg {
         Msg::StartHeight(height) => start_height(co, state, metrics, height).await,
+        Msg::StartNextHeight => start_next_height(co, state, metrics).await,
         Msg::Vote(vote) => on_vote(co, state, metrics, vote).await,
         Msg::Proposal(proposal) => on_proposal(co, state, metrics, proposal).await,
         Msg::ProposeValue(height, round, value) => {
@@ -85,11 +86,10 @@ where
     Ok(())
 }
 
-async fn move_to_height<Ctx>(
+async fn start_next_height<Ctx>(
     co: &Co<Ctx>,
     state: &mut State<Ctx>,
     metrics: &Metrics,
-    height: Ctx::Height,
 ) -> Result<(), Error<Ctx>>
 where
     Ctx: Context,
@@ -97,8 +97,9 @@ where
     perform!(co, Effect::CancelAllTimeouts);
     perform!(co, Effect::ResetTimeouts);
 
-    // End the current step (most likely Commit)
     metrics.step_end(state.driver.step());
+
+    let height = state.driver.height().increment();
 
     let validator_set = perform!(co, Effect::GetValidatorSet(height),
         Resume::ValidatorSet(vs_height, validator_set) => {
@@ -305,9 +306,14 @@ where
             // TODO: Remove proposal, votes, block for the round
             info!("Decided on value {}", value.id());
 
+            // Store value decided on for retrieval when timeout commit elapses
+            state
+                .decision
+                .insert((state.driver.height(), round), value.clone());
+
             perform!(co, Effect::ScheduleTimeout(Timeout::commit(round)));
 
-            decided(co, state, metrics, state.driver.height(), round, value).await
+            Ok(())
         }
 
         DriverOutput::ScheduleTimeout(timeout) => {
@@ -360,7 +366,7 @@ where
     apply_driver_input(co, state, metrics, DriverInput::ProposeValue(round, value)).await
 }
 
-async fn decided<Ctx>(
+async fn decide<Ctx>(
     co: &Co<Ctx>,
     state: &mut State<Ctx>,
     metrics: &Metrics,
@@ -379,7 +385,7 @@ where
 
     perform!(
         co,
-        Effect::DecidedOnValue {
+        Effect::Decide {
             height,
             round,
             value,
@@ -627,7 +633,12 @@ where
     apply_driver_input(co, state, metrics, DriverInput::TimeoutElapsed(timeout)).await?;
 
     if timeout.step == TimeoutStep::Commit {
-        move_to_height(co, state, metrics, height.increment()).await?;
+        let value = state
+            .decision
+            .remove(&(height, round))
+            .ok_or_else(|| Error::DecidedValueNotFound(height, round))?;
+
+        decide(co, state, metrics, height, round, value).await?;
     }
 
     Ok(())
