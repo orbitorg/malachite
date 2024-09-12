@@ -383,6 +383,7 @@ run voteCountFromCertificateTest =
         res.valuesWeights.get(Val("blue")) == 1,
         res.votesAddresses == Set("v2", "v3", "v4"),
         res.receivedVotes == old.union(cert),
+        res.hasQuorumOnValue(Val("red")),
     })
 
 pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], roundVotes: RoundVotes, valset: ValidatorSet) : (RoundVotes, Set[Set[Vote]]) = 
