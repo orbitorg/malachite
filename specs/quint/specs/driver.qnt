@@ -359,8 +359,7 @@ module driver {
                     | _ => toDriverOutput(cons_res.ds, cons_res.out, cert) 
                 }
             | CertificateDInput(votes) =>
-                val certificateWeight = votes.fold(0, (s, vote) => s + state.valset.get(vote.srcAddress))
-                val res = applyCertificate(state.bk, votes, certificateWeight, state.cs.round)
+                val res = applyCertificate(state.bk, votes, state.cs.round)
                 val cert = getCertificate(res.bookkeeper, res.output)
                 val newState = { ...state, bk: res.bookkeeper, voteKeeperOutput: res.output}
                 // workaround for chooseSome

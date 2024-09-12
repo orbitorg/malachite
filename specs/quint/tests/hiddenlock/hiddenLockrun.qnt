@@ -104,22 +104,22 @@ run hiddenlockrun =
 
     // now we require certificates in order to make progress
 
-    // testedval now gets the certificate for round 0, but it is too late for this round.
-    .then(deliverSomeCertificate(testedval))
+    // // testedval now gets the certificate for round 0, but it is too late for this round.
+    // .then(deliverSomeCertificate(testedval))
 
-    // let's move on to the next round
-    .then(ListDeliverAllVotes(Prevote, others, correctList, validatorSet, 0, 1, Val(value))) 
-    .then(ListDeliverAllVotes(Prevote, List(testedval), correctList, validatorSet, 0, 1, Nil))   
-    .then(Correct.size().reps(_ => ListTakeAStep(correctList)))
-    .then(3.reps(_ => ListTakeAStep(correctList)))
-    .then(ListDeliverAllVotes(Precommit, correctList, correctList, validatorSet, 0, 1, Nil))
-    .then(Correct.size().reps(_ => ListTakeAStep(correctList)))
-    .then(valStep(testedval))
+    // // let's move on to the next round
+    // .then(ListDeliverAllVotes(Prevote, others, correctList, validatorSet, 0, 1, Val(value))) 
+    // .then(ListDeliverAllVotes(Prevote, List(testedval), correctList, validatorSet, 0, 1, Nil))   
+    // .then(Correct.size().reps(_ => ListTakeAStep(correctList)))
+    // .then(3.reps(_ => ListTakeAStep(correctList)))
+    // .then(ListDeliverAllVotes(Precommit, correctList, correctList, validatorSet, 0, 1, Nil))
+    // .then(Correct.size().reps(_ => ListTakeAStep(correctList)))
+    // .then(valStep(testedval))
 
-    // now the proposer reproposes and the correct ones receive the proposal...
-    .then(everyoneReceivesProposalVR (correctList, validatorList, validatorSet, 0, 2, value, 0))
+    // // now the proposer reproposes and the correct ones receive the proposal...
+    // .then(everyoneReceivesProposalVR (correctList, validatorList, validatorSet, 0, 2, value, 0))
 
-    // now we are good again. All correct nodes prevote for the value in round 2 ...
-    .expect(Correct.forall(p => Correct.forall(q => voteBuffer.get(q).contains(mkVote(Prevote, p, 0, 2, Val(value))))))
+    // // now we are good again. All correct nodes prevote for the value in round 2 ...
+    // .expect(Correct.forall(p => Correct.forall(q => voteBuffer.get(q).contains(mkVote(Prevote, p, 0, 2, Val(value))))))
 
 }

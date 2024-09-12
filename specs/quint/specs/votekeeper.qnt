@@ -239,7 +239,7 @@ module votekeeper {
     //   of the current height; I wonder if we need to keep the totalWeight for every Height that we may receive a vote for.
     pure def applyVote(keeper: Bookkeeper, vote: Vote, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
         val round = vote.round
-        val weight = keeper.validatorSet.get(vote.srcAddress)
+        val weight = keeper.validatorSet.getOrElse(vote.srcAddress, 0)
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.validatorSet.totalWeight()))
         
         val updatedVoteCount = 
@@ -327,34 +327,72 @@ module votekeeper {
             assert(o6.bookkeeper.evidence != Set())
         }
 
+pure def countVotes (votes: Set[Vote], v: ValueId, valset: ValidatorSet) : Weight =
+    votes.filter(vote => vote.valueId == v).fold(0, (s, x) => s + valset.getOrElse(x.srcAddress, 0))
 
-
-pure def validCertificate (certificate: Set[Vote], certificateWeight: Weight, keeper: Bookkeeper) : bool = 
+pure def validCertificate (certificate: Set[Vote], valset: ValidatorSet) : bool = 
     val v = certificate.fold(emptyVote, (sum, y) => y)    // certificate.chooseSome()
     all {
         v.valueId != Nil,
-        certificate.forall(x => all {    x.voteType == v.voteType,
-                                    x.height == v.height,
-                                    x.round == v.round,
-                                    x.valueId == v.valueId,}),
-        certificateWeight > 2 / 3 * keeper.validatorSet.totalWeight(), 
+        certificate.forall(x => all {   x.voteType == v.voteType,
+                                        x.height == v.height,
+                                        x.round == v.round,
+                                        x.valueId == v.valueId,}),
+        certificate.countVotes(v.valueId, valset) * 3 > 2 * valset.totalWeight(), 
     }
 
+run countVotesvalidCertificateTest =
+    val invalidValue = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("blue"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v4", valueId: Val("red"), voteType: Prevote }
+    )
+    val invalidValSet = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v5", valueId: Val("red"), voteType: Prevote }
+    )  
+    val invalidWeight = Set(
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v4", valueId: Val("red"), voteType: Prevote }
+    )      
+    val valid = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v4", valueId: Val("red"), voteType: Prevote }
+    )
+    val validatorSet = Set("v1", "v2", "v3", "v4").mapBy(x => 1)
+    all {
+    assert(validatorSet.totalWeight() == 4),
+    assert(countVotes(invalidValue, Val("red"), validatorSet) == 2),
+    assert(countVotes(invalidValue, Val("blue"), validatorSet) == 1),
+    assert(countVotes(invalidValSet, Val("red"), validatorSet) == 2),
+    assert(countVotes(invalidValSet, Val("blue"), validatorSet) == 0),
+    assert(countVotes(invalidWeight, Val("red"), validatorSet) == 2),
+    assert(countVotes(invalidWeight, Val("blue"), validatorSet) == 0),
+    assert(countVotes(valid, Val("red"), validatorSet) == 3),
+    assert(countVotes(valid, Val("blue"), validatorSet) == 0),
+    assert(validCertificate(invalidValue, validatorSet) == false),
+    assert(validCertificate(invalidValSet, validatorSet) == false),
+    assert(validCertificate(invalidWeight, validatorSet) == false),
+    assert(validCertificate(valid, validatorSet)),
+    }
+
+
 pure def certificateRound (certificate: Set[Vote]) : Round = 
+    // assumes certificate is valid (this also ensures that the fold is sound)
     // chooseSome(certificate).round
     certificate.fold(emptyVote, (sum, y) => y).round
 
 pure def certificateValue (certificate: Set[Vote]) : Value = 
+    // assumes certificate is valid (this also ensures that the fold is sound)
     //chooseSome(certificate).valueId
     certificate.fold(emptyVote, (sum, y) => y).valueId
 
 pure def certificateType (certificate: Set[Vote]) : VoteType = 
+    // assumes certificate is valid (this also ensures that the fold is sound)
     // chooseSome(certificate).voteType
     certificate.fold(emptyVote, (sum, y) => y).voteType
-
-
-pure def countVotes (votes: Set[Vote], v: ValueId, valset: ValidatorSet) : Weight =
-    votes.filter(vote => vote.valueId == v).fold(0, (s, x) => s + valset.get(x.srcAddress))
 
 pure def voteCountFromCertificate (certificate: Set[Vote], oldVotes: Set[Vote], valset: ValidatorSet) : VoteCount =
     val newVotes = certificate.union(oldVotes)
@@ -384,6 +422,7 @@ run voteCountFromCertificateTest =
         res.votesAddresses == Set("v2", "v3", "v4"),
         res.receivedVotes == old.union(cert),
         res.hasQuorumOnValue(Val("red")),
+        res.receivedVotes.countVotes(Val("red"), validatorSet) == 3, //test for countVotes
     })
 
 pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], roundVotes: RoundVotes, valset: ValidatorSet) : (RoundVotes, Set[Set[Vote]]) = 
@@ -403,8 +442,8 @@ pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], roundVote
 
 // This takes a certificate, checks for evidence, and overwrites the roundVotes with the new certificate
 // TODO: add test for applyCertificate with/without evidence
-pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificateWeight: Weight, currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
-    if (not(validCertificate(certificate, certificateWeight, keeper)))
+pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], currentRound: Round): { bookkeeper: Bookkeeper, output: VoteKeeperOutput } =
+    if (not(validCertificate(certificate, keeper.validatorSet)))
         { bookkeeper: keeper, output: NoVKOutput }
     else
         // getting the roundVotes that are touched by the certificate
@@ -426,15 +465,93 @@ pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificat
                                                                 // currently needed to have the match complete
         }
 
+    run applyCertificateTest =
+        val bk : Bookkeeper =
+                    {
+          evidence: Set(),
+          height: 0,
+          rounds:
+            Map(
+              0 ->
+                {
+                  emittedOutputs: Set(PolkaAnyVKOutput(0), PrecommitAnyVKOutput(0)),
+                  height: 0,
+                  precommits:
+                    {
+                      receivedVotes:
+                        Set(
+                          { height: 0, round: 0, srcAddress: "v1", valueId: Nil, voteType: Precommit },
+                          { height: 0, round: 0, srcAddress: "v3", valueId: Val("blue"), voteType: Precommit },
+                          { height: 0, round: 0, srcAddress: "v4", valueId: Val("blue"), voteType: Precommit }
+                        ),
+                      totalWeight: 4,
+                      valuesWeights: Map(Nil -> 1, Val("blue") -> 2),
+                      votesAddresses: Set("v1", "v3", "v4")
+                    },
+                  prevotes:
+                    {
+                      receivedVotes:
+                        Set(
+                          { height: 0, round: 0, srcAddress: "v2", valueId: Nil, voteType: Prevote },
+                          { height: 0, round: 0, srcAddress: "v3", valueId: Val("blue"), voteType: Prevote },
+                          { height: 0, round: 0, srcAddress: "v4", valueId: Val("blue"), voteType: Prevote }
+                        ),
+                      totalWeight: 4,
+                      valuesWeights: Map(Nil -> 1, Val("blue") -> 2),
+                      votesAddresses: Set("v2", "v3", "v4")
+                    },
+                  round: 0,
+                  votesAddressesWeights: Map("v1" -> 1, "v2" -> 1, "v3" -> 1, "v4" -> 1)
+                }
+            ),
+          validatorSet: Map("v1" -> 1, "v2" -> 1, "v3" -> 1, "v4" -> 1)
+        }
+        val validCert = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("blue"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("blue"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v4", valueId: Val("blue"), voteType: Prevote }
+        )
+        val invalidCertificate = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("blue"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v4", valueId: Val("blue"), voteType: Prevote }
+        )
+        val resSuccess = applyCertificate(bk, validCert, 1)
+        val resFailed = applyCertificate(bk, invalidCertificate, 1)
+        val new = resSuccess.bookkeeper
+        all{
+            assert(resSuccess.output == PolkaValueVKOutput((0, "blue")) ),
+            assert(new.evidence == Set( Set(
+                { height: 0, round: 0, srcAddress: "v2", valueId: Nil, voteType: Prevote },
+                { height: 0, round: 0, srcAddress: "v2", valueId: Val("blue"), voteType: Prevote }
+            ))),
+            assert(new.rounds.get(0).prevotes.receivedVotes == bk.rounds.get(0).prevotes.receivedVotes.union(validCert)),
+            assert(new.rounds.get(0).prevotes.valuesWeights.get(Val("blue")) == 3),
+
+            assert(resFailed.output == NoVKOutput),
+            assert(resFailed.bookkeeper == bk), // nothing changed
+        }
+        
+
+
+
+
+
+
 pure def getCertificate(keeper: Bookkeeper, vkout: VoteKeeperOutput) : Certificate =
-// TODO: check certificate has enough voting power
     match vkout {
         | PolkaValueVKOutput(rndVal) => 
             val cert = keeper.rounds.get(rndVal._1).prevotes.receivedVotes.filter(v => v.valueId == Val(rndVal._2))
-            Polka(cert)
+            if (cert.validCertificate(keeper.validatorSet)) // check voting power
+                Polka(cert)
+            else 
+                NoCertificate
         | PrecommitValueVKOutput(rndVal) => 
             val cert = keeper.rounds.get(rndVal._1).precommits.receivedVotes.filter(v => v.valueId == Val(rndVal._2))
-            Commit(cert)
+            if (cert.validCertificate(keeper.validatorSet)) // check voting power
+                Commit(cert)
+            else 
+                NoCertificate
         | _ => NoCertificate
     }
 
