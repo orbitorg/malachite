@@ -22,7 +22,7 @@ module driver {
         started: bool,
         voteKeeperOutput: VoteKeeperOutput,
         chain: List[{decision: NonNilValue, commit: Set[Vote]}],
-        certificates: Set[Certificate], // we store the Polka and Commits we have seen
+        certificates: Set[Certificate], // we store Polkas and Commits we have seen
     }
 
     pure def initDriver(v: Address, vs: ValidatorSet): DriverState = {
