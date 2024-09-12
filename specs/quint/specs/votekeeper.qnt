@@ -352,14 +352,40 @@ pure def certificateType (certificate: Set[Vote]) : VoteType =
     // chooseSome(certificate).voteType
     certificate.fold(emptyVote, (sum, y) => y).voteType
 
-pure def voteCountFromCertificate (certificate: Set[Vote], certificateWeight: Weight) : VoteCount =
-    {   totalWeight: certificateWeight,
-        valuesWeights: Map(certificateValue(certificate) -> certificateWeight),
-        votesAddresses: certificate.map(x => x.srcAddress),
-        receivedVotes: certificate,
+
+pure def countVotes (votes: Set[Vote], v: ValueId, valset: ValidatorSet) : Weight =
+    votes.filter(vote => vote.valueId == v).fold(0, (s, x) => s + valset.get(x.srcAddress))
+
+pure def voteCountFromCertificate (certificate: Set[Vote], oldVotes: Set[Vote], valset: ValidatorSet) : VoteCount =
+    val newVotes = certificate.union(oldVotes)
+    val values = newVotes.map(x => x.valueId)
+    {   totalWeight: valset.totalWeight(),
+        valuesWeights: values.mapBy(x => newVotes.countVotes(x, valset)),
+        votesAddresses: newVotes.map(x => x.srcAddress),
+        receivedVotes: newVotes,
     }
 
-pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], certificateWeight: Weight, roundVotes: RoundVotes) : (RoundVotes, Set[Set[Vote]]) = 
+run voteCountFromCertificateTest =
+    val old = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("blue"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("red"), voteType: Prevote }
+    )
+    val cert = Set(
+        { height: 0, round: 0, srcAddress: "v2", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v3", valueId: Val("red"), voteType: Prevote },
+        { height: 0, round: 0, srcAddress: "v4", valueId: Val("red"), voteType: Prevote }
+    )
+    val validatorSet = Set("v1", "v2", "v3", "v4").mapBy(x => 1)
+    val res = voteCountFromCertificate(cert, old, validatorSet)
+    assert(all{
+        res.totalWeight == 4, 
+        res.valuesWeights.get(Val("red")) == 3,
+        res.valuesWeights.get(Val("blue")) == 1,
+        res.votesAddresses == Set("v2", "v3", "v4"),
+        res.receivedVotes == old.union(cert),
+    })
+
+pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], roundVotes: RoundVotes, valset: ValidatorSet) : (RoundVotes, Set[Set[Vote]]) = 
     // compute evidence
     val oldVotes = match certificate.certificateType() {
         | Prevote => roundVotes.prevotes.receivedVotes
@@ -367,9 +393,10 @@ pure def roundVotesAndEvidenceFromCertificate (certificate: Set[Vote], certifica
     } 
     val doubleVotes = certificate.filter(cv => oldVotes.exists(ov => cv.srcAddress == ov.srcAddress and cv.valueId != ov.valueId))
     val newEvidence = doubleVotes.map(cv => Set(cv).union(oldVotes.filter(ov => cv.srcAddress == ov.srcAddress)))
+    //TODO merge oldVotes and certificate compute weight
     match certificate.certificateType() {
-        | Prevote => (roundVotes.with("prevotes", voteCountFromCertificate(certificate, certificateWeight)), newEvidence)
-        | Precommit => (roundVotes.with("precommits", voteCountFromCertificate(certificate, certificateWeight)), newEvidence)
+        | Prevote => (roundVotes.with("prevotes", voteCountFromCertificate(certificate, oldVotes, valset)), newEvidence)
+        | Precommit => (roundVotes.with("precommits", voteCountFromCertificate(certificate, oldVotes, valset)), newEvidence)
     }
 
 
@@ -383,7 +410,7 @@ pure def applyCertificate(keeper: Bookkeeper, certificate: Set[Vote], certificat
         val round = certificate.certificateRound() 
         val roundVotes = keeper.rounds.getOrElse(round, newRoundVotes(keeper.height, round, keeper.validatorSet.totalWeight()))
         // overwrite roundvotes with certificate
-        val rvEv = roundVotesAndEvidenceFromCertificate(certificate, certificateWeight, roundVotes)
+        val rvEv = roundVotesAndEvidenceFromCertificate(certificate, roundVotes, keeper.validatorSet)
         val newRounds = keeper.rounds.set(certificate.certificateRound(), rvEv._1)
         // compute the new bookkeeper state with evidence and updated roundvotes
         val newkeeper = keeper
