@@ -1,4 +1,4 @@
-use core::{fmt, str};
+use core::{fmt, hash, str};
 
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +17,7 @@ impl malachite_common::Value for BlockHash {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Hash(Hash256);
 
@@ -65,6 +65,12 @@ impl proto::Protobuf for Hash {
         Ok(p2p_proto::Hash {
             elements: self.as_bytes().to_vec(),
         })
+    }
+}
+
+impl hash::Hash for Hash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.as_bytes().hash(state)
     }
 }
 
