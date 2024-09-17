@@ -1,7 +1,6 @@
 use derive_where::derive_where;
 use libp2p_identity::PeerId;
 use std::collections::HashSet;
-use std::hash::Hash;
 
 use malachite_common::*;
 
@@ -12,7 +11,7 @@ use crate::GossipMsg;
 #[derive_where(Eq, Hash, PartialEq)]
 pub struct CrdtKey<Ctx>
 where
-    Ctx: Context
+    Ctx: Context,
 {
     peer_id: PeerId,
     height: Ctx::Height,
@@ -39,8 +38,6 @@ where
             round: msg.msg_round(),
             value: msg.msg_value_id(),
         };
-        self
-            .peer_state
-            .insert(key);
+        self.peer_state.insert(key);
     }
 }
