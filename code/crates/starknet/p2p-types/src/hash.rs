@@ -17,7 +17,7 @@ impl malachite_common::Value for BlockHash {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Hash(Hash256);
 

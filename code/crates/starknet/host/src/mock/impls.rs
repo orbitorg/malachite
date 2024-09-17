@@ -29,7 +29,7 @@ impl common::Proposal<MockContext> for Proposal {
         &self.block_hash
     }
 
-    fn take_value(self) -> BlockHash {
+    fn take_value(&self) -> BlockHash {
         self.block_hash
     }
 

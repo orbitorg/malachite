@@ -48,7 +48,7 @@ impl malachite_common::Proposal<TestContext> for Proposal {
         &self.value
     }
 
-    fn take_value(self) -> Value {
+    fn take_value(&self) -> Value {
         self.value
     }
 

@@ -1,4 +1,5 @@
 use core::fmt::{Debug, Display};
+use core::hash::Hash;
 
 /// Defines the requirements for a height type.
 ///
@@ -8,7 +9,7 @@ use core::fmt::{Debug, Display};
 pub trait Height
 where
     Self:
-        Default + Copy + Clone + Debug + Display + PartialEq + Eq + PartialOrd + Ord + Send + Sync,
+        Default + Copy + Clone + Debug + Display + PartialEq + Eq + Hash + PartialOrd + Ord + Send + Sync,
 {
     /// Increment the height by one.
     fn increment(&self) -> Self;

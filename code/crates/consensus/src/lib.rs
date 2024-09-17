@@ -1,3 +1,6 @@
+mod crdt;
+pub use crdt::Crdt;
+
 mod msg;
 pub use msg::Msg;
 

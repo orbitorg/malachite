@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 
+use crate::Crdt;
 use malachite_common::*;
 use malachite_driver::Driver;
 
@@ -26,6 +27,9 @@ where
 
     /// Store Precommit votes to be sent along the decision to the host
     pub signed_precommits: BTreeMap<(Ctx::Height, Round), Vec<SignedVote<Ctx>>>,
+
+    /// Store latest seen (p, h, r, s, id(v)) for each peer
+    pub crdt: Crdt<Ctx>,
 }
 
 impl<Ctx> State<Ctx>

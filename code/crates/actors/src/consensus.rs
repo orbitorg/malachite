@@ -10,7 +10,8 @@ use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use malachite_common::{Context, NilOrVal, Round, Timeout, TimeoutStep, ValidatorSet, VoteType};
-use malachite_consensus::{Effect, Resume};
+use malachite_consensus::{Crdt, Effect, GossipMsg, Resume};
+
 use malachite_driver::Driver;
 use malachite_metrics::Metrics;
 use malachite_node::config::TimeoutConfig;
@@ -261,22 +262,27 @@ where
                     }
 
                     GossipEvent::Vote(from, vote) => {
-                        if let Err(e) = self.process_msg(&myself, state, InnerMsg::Vote(vote)).await
+                        if let Err(e) = self
+                            .process_msg(&myself, state, InnerMsg::Vote(vote.clone()))
+                            .await
                         {
                             error!(%from, "Error when processing vote: {e:?}");
                         }
-
+                        state.consensus.crdt.store_msg(from, GossipMsg::Vote(vote));
                         Ok(())
                     }
 
                     GossipEvent::Proposal(from, proposal) => {
                         if let Err(e) = self
-                            .process_msg(&myself, state, InnerMsg::Proposal(proposal))
+                            .process_msg(&myself, state, InnerMsg::Proposal(proposal.clone()))
                             .await
                         {
                             error!(%from, "Error when processing proposal: {e:?}");
                         }
-
+                        state
+                            .consensus
+                            .crdt
+                            .store_msg(from, GossipMsg::Proposal(proposal));
                         Ok(())
                     }
 
@@ -568,6 +574,9 @@ where
             msg_queue: VecDeque::new(),
             received_blocks: vec![],
             signed_precommits: Default::default(),
+            crdt: Crdt {
+                peer_state: Default::default(),
+            },
         };
 
         Ok(State {

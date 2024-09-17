@@ -18,7 +18,7 @@ where
     fn value(&self) -> &Ctx::Value;
 
     /// The value that is proposed.
-    fn take_value(self) -> Ctx::Value;
+    fn take_value(&self) -> Ctx::Value;
 
     /// The POL round for which the proposal is for.
     fn pol_round(&self) -> Round;

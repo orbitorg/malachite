@@ -1,6 +1,8 @@
 use derive_where::derive_where;
 
-use malachite_common::{Context, Proposal, Round, SignedProposal, SignedVote, Validity, Vote};
+use malachite_common::{
+    Context, NilOrVal, Proposal, Round, SignedProposal, SignedVote, Validity, Value, Vote,
+};
 
 pub use libp2p_identity::PeerId;
 pub use multiaddr::Multiaddr;
@@ -17,6 +19,18 @@ impl<Ctx: Context> GossipMsg<Ctx> {
         match self {
             GossipMsg::Vote(msg) => msg.height(),
             GossipMsg::Proposal(msg) => msg.height(),
+        }
+    }
+    pub fn msg_round(&self) -> Round {
+        match self {
+            GossipMsg::Vote(msg) => msg.round(),
+            GossipMsg::Proposal(msg) => msg.round(),
+        }
+    }
+    pub fn msg_value_id(&self) -> NilOrVal<<Ctx::Value as Value>::Id> {
+        match self {
+            GossipMsg::Vote(msg) => msg.value().clone(),
+            GossipMsg::Proposal(msg) => NilOrVal::Val(msg.take_value().id()),
         }
     }
 }

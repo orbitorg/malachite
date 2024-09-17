@@ -58,7 +58,7 @@ impl Protobuf for ValueId {
 }
 
 /// The value to decide on
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Value(u64);
 
 impl Value {

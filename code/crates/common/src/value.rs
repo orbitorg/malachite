@@ -1,4 +1,5 @@
 use core::fmt::{Debug, Display};
+use core::hash::Hash;
 
 /// Represents either `Nil` or a value of type `Value`.
 ///
@@ -56,11 +57,11 @@ impl<Value> NilOrVal<Value> {
 /// Defines the requirements for the type of value to decide on.
 pub trait Value
 where
-    Self: Clone + Debug + PartialEq + Eq + PartialOrd + Ord + Send + Sync,
+    Self: Clone + Debug + PartialEq + Eq + PartialOrd + Ord + Hash + Send + Sync,
 {
     /// The type of the ID of the value.
     /// Typically a representation of the value with a lower memory footprint.
-    type Id: Clone + Debug + Display + PartialEq + Eq + PartialOrd + Ord + Send + Sync;
+    type Id: Clone + Debug + Display + PartialEq + Eq + PartialOrd + Ord + Hash + Send + Sync;
 
     /// The ID of the value.
     fn id(&self) -> Self::Id;
