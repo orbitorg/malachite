@@ -1,3 +1,4 @@
+use derive_where::derive_where;
 use libp2p_identity::PeerId;
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -8,7 +9,7 @@ use crate::GossipMsg;
 
 /// Maintains latest seen (p, h, r, s, id(v)) for each peer
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive_where(Eq, Hash, PartialEq)]
 pub struct CrdtKey<Ctx>
 where
     Ctx: Context
