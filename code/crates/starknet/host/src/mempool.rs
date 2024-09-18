@@ -166,10 +166,27 @@ impl Actor for Mempool {
             MempoolMsg::GossipEvent,
         )
         .await?;
+
         self.gossip_mempool
             .cast(GossipMempoolMsg::Subscribe(forward))?;
 
-        Ok(State::new())
+        let mut state = State::new();
+
+        // TESTING: Pre-populate the mempool
+        generate_and_broadcast_txes(
+            self.mempool_config.max_tx_count,
+            self.test_config.tx_size.as_u64() as usize,
+            &self.mempool_config,
+            &mut state,
+            &self.gossip_mempool,
+        )?;
+
+        info!(
+            "Prepopulated the mempool with {} txes",
+            state.transactions.len()
+        );
+
+        Ok(state)
     }
 
     #[tracing::instrument("starknet.mempool", skip(self, myself, msg, state))]
@@ -192,6 +209,20 @@ impl Actor for Mempool {
                 }
             }
 
+            // TESTING: Use pre-populated mempool
+            MempoolMsg::Reap {
+                reply, num_txes, ..
+            } if state.transactions.len() >= num_txes => {
+                let txes = state
+                    .transactions
+                    .values()
+                    .take(num_txes)
+                    .cloned()
+                    .collect();
+
+                reply.send(txes)?;
+            }
+
             MempoolMsg::Reap {
                 reply, num_txes, ..
             } => {
@@ -210,7 +241,8 @@ impl Actor for Mempool {
                 // FIXME: Remove only the given txes
                 // tx_hashes.iter().for_each(|hash| state.remove_tx(hash));
 
-                state.transactions.clear();
+                // TESTING: Do not clear the mempool
+                // state.transactions.clear();
             }
         }
 
