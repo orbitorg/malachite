@@ -48,8 +48,8 @@ where
 pub type ConsensusMsg<Ctx> = Msg<Ctx>;
 
 pub enum Msg<Ctx: Context> {
-    /// Start the next height
-    StartNextHeight,
+    /// Start consensus for the given height
+    StartHeight(Ctx::Height),
 
     /// Received an event from the gossip layer
     GossipEvent(GossipEvent<Ctx>),
@@ -200,13 +200,13 @@ where
         msg: Msg<Ctx>,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
-            Msg::StartNextHeight => {
+            Msg::StartHeight(height) => {
                 let result = self
-                    .process_msg(&myself, state, InnerMsg::StartNextHeight)
+                    .process_msg(&myself, state, InnerMsg::StartHeight(height))
                     .await;
 
                 if let Err(e) = result {
-                    error!("Error when starting next height: {e:?}");
+                    error!("Error when starting height {height}: {e:?}");
                 }
 
                 Ok(())
