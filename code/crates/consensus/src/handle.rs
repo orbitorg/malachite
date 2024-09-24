@@ -39,8 +39,7 @@ where
     Ctx: Context,
 {
     match msg {
-        Msg::StartHeight(height) => start_height(co, state, metrics, height).await,
-        Msg::StartNextHeight => start_next_height(co, state, metrics).await,
+        Msg::StartHeight(height) => reset_and_start_height(co, state, metrics, height).await,
         Msg::Vote(vote) => on_vote(co, state, metrics, vote).await,
         Msg::Proposal(proposal) => on_proposal(co, state, metrics, proposal).await,
         Msg::ProposeValue(height, round, value) => {
@@ -86,10 +85,11 @@ where
     Ok(())
 }
 
-async fn start_next_height<Ctx>(
+async fn reset_and_start_height<Ctx>(
     co: &Co<Ctx>,
     state: &mut State<Ctx>,
     metrics: &Metrics,
+    height: Ctx::Height,
 ) -> Result<(), Error<Ctx>>
 where
     Ctx: Context,
@@ -98,8 +98,6 @@ where
     perform!(co, Effect::ResetTimeouts);
 
     metrics.step_end(state.driver.step());
-
-    let height = state.driver.height().increment();
 
     let validator_set = perform!(co, Effect::GetValidatorSet(height),
         Resume::ValidatorSet(vs_height, validator_set) => {
