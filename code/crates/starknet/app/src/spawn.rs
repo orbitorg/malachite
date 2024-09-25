@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use libp2p_identity::ecdsa;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -39,7 +40,14 @@ pub async fn spawn_node_actor(
 
     // Spawn mempool and its gossip layer
     let gossip_mempool = spawn_gossip_mempool_actor(&cfg, &private_key, registry).await;
-    let mempool = spawn_mempool_actor(gossip_mempool.clone(), &cfg.mempool, &cfg.test).await;
+
+    let mempool = spawn_mempool_actor(
+        gossip_mempool.clone(),
+        &cfg.mempool,
+        &cfg.test,
+        cfg.consensus.max_block_size,
+    )
+    .await;
 
     // Spawn consensus gossip
     let gossip_consensus = spawn_gossip_consensus_actor(&cfg, &private_key, registry).await;
@@ -158,10 +166,17 @@ async fn spawn_mempool_actor(
     gossip_mempool: GossipMempoolRef,
     mempool_config: &MempoolConfig,
     test_config: &TestConfig,
+    max_block_size: ByteSize,
 ) -> MempoolRef {
-    Mempool::spawn(gossip_mempool, mempool_config, test_config, None)
-        .await
-        .unwrap()
+    Mempool::spawn(
+        gossip_mempool,
+        mempool_config,
+        test_config,
+        max_block_size,
+        None,
+    )
+    .await
+    .unwrap()
 }
 
 async fn spawn_gossip_mempool_actor(

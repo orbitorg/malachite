@@ -1,7 +1,9 @@
+use std::cmp;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use ractor::{Actor, ActorCell, ActorProcessingErr, ActorRef, RpcReplyPort};
 use rand::RngCore;
 use tracing::{debug, info, trace};
@@ -21,6 +23,7 @@ pub struct Mempool {
     gossip_mempool: GossipMempoolRef,
     mempool_config: MempoolConfig, // todo - pick only what's needed
     test_config: TestConfig,       // todo - pick only the mempool related
+    max_block_size: ByteSize,
 }
 
 pub enum MempoolMsg {
@@ -70,11 +73,13 @@ impl Mempool {
         gossip_mempool: GossipMempoolRef,
         mempool_config: MempoolConfig,
         test_config: TestConfig,
+        max_block_size: ByteSize,
     ) -> Self {
         Self {
             gossip_mempool,
             mempool_config,
             test_config,
+            max_block_size,
         }
     }
 
@@ -82,9 +87,15 @@ impl Mempool {
         gossip_mempool: GossipMempoolRef,
         mempool_config: &MempoolConfig,
         test_config: &TestConfig,
+        max_block_size: ByteSize,
         supervisor: Option<ActorCell>,
     ) -> Result<MempoolRef, ractor::SpawnErr> {
-        let node = Self::new(gossip_mempool, mempool_config.clone(), *test_config);
+        let node = Self::new(
+            gossip_mempool,
+            mempool_config.clone(),
+            *test_config,
+            max_block_size,
+        );
 
         let (actor_ref, _) = if let Some(supervisor) = supervisor {
             Actor::spawn_linked(None, node, (), supervisor).await?
@@ -172,9 +183,11 @@ impl Actor for Mempool {
 
         let mut state = State::new();
 
+        let max_tx_count = self.max_block_size.as_u64() / self.test_config.tx_size.as_u64();
+
         // TESTING: Pre-populate the mempool
         generate_and_broadcast_txes(
-            self.mempool_config.max_tx_count,
+            cmp::min(max_tx_count as usize, self.mempool_config.max_tx_count),
             self.test_config.tx_size.as_u64() as usize,
             &self.mempool_config,
             &mut state,
