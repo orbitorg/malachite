@@ -2539,6 +2539,7 @@ dependencies = [
  "malachite-common",
  "malachite-proto",
  "malachite-starknet-p2p-proto",
+ "multiaddr",
  "rand",
  "serde",
  "sha3",

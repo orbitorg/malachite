@@ -38,6 +38,8 @@ pub use hash::{BlockHash, Hash, MessageHash};
 mod streaming;
 pub use streaming::{StreamContent, StreamMessage};
 
+pub mod discovery;
+
 mod signing;
 
 pub type SigningScheme = signing::Ecdsa;
