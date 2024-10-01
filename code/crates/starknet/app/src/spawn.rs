@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use libp2p_identity::ecdsa;
+use malachite_actors::block_sync::{BlockSync, BlockSyncRef};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -71,12 +72,16 @@ pub async fn spawn_node_actor(
     )
     .await;
 
+    let block_sync =
+        spawn_block_sync_actor(ctx.clone(), gossip_consensus.clone(), consensus.clone()).await;
+
     // Spawn the node actor
     let node = Node::new(
         ctx,
         gossip_consensus,
         consensus,
         gossip_mempool,
+        block_sync,
         mempool.get_cell(),
         host,
         start_height,
@@ -85,6 +90,15 @@ pub async fn spawn_node_actor(
     let (actor_ref, handle) = node.spawn().await.unwrap();
 
     (actor_ref, handle)
+}
+
+async fn spawn_block_sync_actor(
+    ctx: MockContext,
+    gossip_consensus: GossipConsensusRef<MockContext>,
+    consensus: ConsensusRef<MockContext>,
+) -> BlockSyncRef<MockContext> {
+    let block_sync = BlockSync::new(ctx, gossip_consensus, consensus);
+    block_sync.spawn().await.unwrap().0
 }
 
 #[allow(clippy::too_many_arguments)]
