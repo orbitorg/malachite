@@ -245,6 +245,10 @@ where
                 self.publish(GossipEvent::ProposalPart(from, msg), subscribers);
             }
 
+            Msg::NewEvent(Event::Message(Channel::BlockSync, from, _data)) => {
+                debug!("Received block sync message from {from}");
+            }
+
             Msg::GetState { reply } => {
                 let number_peers = match state {
                     State::Stopped => 0,
