@@ -3,7 +3,6 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::ops::ControlFlow;
 use std::time::Duration;
 
@@ -55,8 +54,6 @@ impl PubSubProtocol {
 
 const PROTOCOL_VERSION: &str = "malachite-gossip-consensus/v1beta1";
 
-pub type BoxError = Box<dyn Error + Send + Sync + 'static>;
-
 #[derive(Clone, Debug)]
 pub struct Config {
     pub listen_addr: Multiaddr,
@@ -102,8 +99,8 @@ pub async fn spawn(
     keypair: Keypair,
     config: Config,
     registry: SharedRegistry,
-) -> Result<Handle, BoxError> {
-    let swarm = registry.with_prefix(METRICS_PREFIX, |registry| -> Result<_, BoxError> {
+) -> Result<Handle, eyre::Report> {
+    let swarm = registry.with_prefix(METRICS_PREFIX, |registry| -> Result<_, eyre::Report> {
         let builder = SwarmBuilder::with_existing_identity(keypair).with_tokio();
         match config.transport {
             TransportProtocol::Tcp => Ok(builder

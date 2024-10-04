@@ -2408,6 +2408,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "either",
+ "eyre",
  "futures",
  "libp2p",
  "libp2p-broadcast",

@@ -2,7 +2,7 @@ use bytes::Bytes;
 use tokio::sync::mpsc;
 use tokio::task;
 
-use crate::{BoxError, Channel, CtrlMsg, Event};
+use crate::{Channel, CtrlMsg, Event};
 
 pub struct RecvHandle {
     rx_event: mpsc::Receiver<Event>,
@@ -20,23 +20,23 @@ pub struct CtrlHandle {
 }
 
 impl CtrlHandle {
-    pub async fn publish(&self, channel: Channel, data: Bytes) -> Result<(), BoxError> {
+    pub async fn publish(&self, channel: Channel, data: Bytes) -> Result<(), eyre::Report> {
         self.tx_ctrl.send(CtrlMsg::Publish(channel, data)).await?;
         Ok(())
     }
 
-    pub async fn wait_shutdown(self) -> Result<(), BoxError> {
+    pub async fn wait_shutdown(self) -> Result<(), eyre::Report> {
         self.shutdown().await?;
         self.join().await?;
         Ok(())
     }
 
-    pub async fn shutdown(&self) -> Result<(), BoxError> {
+    pub async fn shutdown(&self) -> Result<(), eyre::Report> {
         self.tx_ctrl.send(CtrlMsg::Shutdown).await?;
         Ok(())
     }
 
-    pub async fn join(self) -> Result<(), BoxError> {
+    pub async fn join(self) -> Result<(), eyre::Report> {
         self.task_handle.await?;
         Ok(())
     }
@@ -70,19 +70,19 @@ impl Handle {
         self.recv.recv().await
     }
 
-    pub async fn broadcast(&self, channel: Channel, data: Bytes) -> Result<(), BoxError> {
+    pub async fn broadcast(&self, channel: Channel, data: Bytes) -> Result<(), eyre::Report> {
         self.ctrl.publish(channel, data).await
     }
 
-    pub async fn wait_shutdown(self) -> Result<(), BoxError> {
+    pub async fn wait_shutdown(self) -> Result<(), eyre::Report> {
         self.ctrl.wait_shutdown().await
     }
 
-    pub async fn shutdown(&self) -> Result<(), BoxError> {
+    pub async fn shutdown(&self) -> Result<(), eyre::Report> {
         self.ctrl.shutdown().await
     }
 
-    pub async fn join(self) -> Result<(), BoxError> {
+    pub async fn join(self) -> Result<(), eyre::Report> {
         self.ctrl.join().await
     }
 }
