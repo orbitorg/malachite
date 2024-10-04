@@ -90,6 +90,10 @@ where
 
     let proposer = state.get_proposer(height, round).cloned()?;
 
+    metrics.block_start();
+    metrics.height.set(height.as_u64() as i64);
+    metrics.round.set(round.as_i64());
+
     apply_driver_input(
         co,
         state,
@@ -97,12 +101,6 @@ where
         DriverInput::NewRound(height, round, proposer.clone()),
     )
     .await?;
-
-    metrics.block_start();
-    metrics.height.set(height.as_u64() as i64);
-    metrics.round.set(round.as_i64());
-
-    perform!(co, Effect::StartRound(height, round, proposer));
 
     replay_pending_msgs(co, state, metrics).await?;
 
