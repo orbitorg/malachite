@@ -20,10 +20,8 @@ pub struct CtrlHandle {
 }
 
 impl CtrlHandle {
-    pub async fn broadcast(&self, channel: Channel, data: Bytes) -> Result<(), BoxError> {
-        self.tx_ctrl
-            .send(CtrlMsg::BroadcastMsg(channel, data))
-            .await?;
+    pub async fn publish(&self, channel: Channel, data: Bytes) -> Result<(), BoxError> {
+        self.tx_ctrl.send(CtrlMsg::Publish(channel, data)).await?;
         Ok(())
     }
 
@@ -73,7 +71,7 @@ impl Handle {
     }
 
     pub async fn broadcast(&self, channel: Channel, data: Bytes) -> Result<(), BoxError> {
-        self.ctrl.broadcast(channel, data).await
+        self.ctrl.publish(channel, data).await
     }
 
     pub async fn wait_shutdown(self) -> Result<(), BoxError> {

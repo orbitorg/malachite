@@ -177,7 +177,7 @@ where
             Msg::Subscribe(subscriber) => subscribers.push(subscriber),
 
             Msg::BroadcastMsg(msg) => match Codec::encode_msg(msg) {
-                Ok(data) => ctrl_handle.broadcast(Channel::Consensus, data).await?,
+                Ok(data) => ctrl_handle.publish(Channel::Consensus, data).await?,
                 Err(e) => error!("Failed to encode gossip message: {e:?}"),
             },
 
@@ -190,7 +190,7 @@ where
 
                 let data = Codec::encode_stream_msg(msg);
                 match data {
-                    Ok(data) => ctrl_handle.broadcast(Channel::ProposalParts, data).await?,
+                    Ok(data) => ctrl_handle.publish(Channel::ProposalParts, data).await?,
                     Err(e) => error!("Failed to encode proposal part: {e:?}"),
                 }
             }

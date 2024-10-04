@@ -36,8 +36,10 @@ const METRICS_PREFIX: &str = "malachite_gossip_consensus";
 
 #[derive(Copy, Clone, Debug, Default)]
 pub enum PubSubProtocol {
+    /// GossipSub: a pubsub protocol based on epidemic broadcast trees
     #[default]
     GossipSub,
+    /// Broadcast: a simple broadcast protocol
     Broadcast,
 }
 
@@ -87,7 +89,7 @@ pub enum Event {
 
 #[derive(Debug)]
 pub enum CtrlMsg {
-    BroadcastMsg(Channel, Bytes),
+    Publish(Channel, Bytes),
     Shutdown,
 }
 
@@ -183,12 +185,12 @@ async fn run(
 
 async fn handle_ctrl_msg(msg: CtrlMsg, swarm: &mut swarm::Swarm<Behaviour>) -> ControlFlow<()> {
     match msg {
-        CtrlMsg::BroadcastMsg(channel, data) => {
+        CtrlMsg::Publish(channel, data) => {
             let msg_size = data.len();
             let result = pubsub::publish(swarm, channel, data);
 
             match result {
-                Ok(()) => debug!(%channel, "Broadcasted message ({msg_size} bytes)"),
+                Ok(()) => debug!(%channel, "Published message ({msg_size} bytes)"),
                 Err(e) => error!(%channel, "Error broadcasting message: {e}"),
             }
 
