@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use eyre::eyre;
 use libp2p::PeerId;
-use ractor::{Actor, ActorProcessingErr, ActorRef};
+use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 
@@ -55,6 +55,9 @@ pub enum Msg<Ctx: Context> {
 
     /// Received and sssembled the full value proposed by a validator
     ReceivedProposedValue(ProposedValue<Ctx>),
+
+    /// Get the status of the consensus state machine
+    GetStatus(RpcReplyPort<Status<Ctx>>),
 }
 
 type ConsensusInput<Ctx> = malachite_consensus::Input<Ctx>;
@@ -399,6 +402,19 @@ where
 
                 Ok(())
             }
+
+            Msg::GetStatus(reply_to) => {
+                let status = Status::new(
+                    state.consensus.driver.height(),
+                    state.consensus.driver.round(),
+                );
+
+                if let Err(e) = reply_to.send(status) {
+                    error!("Error when replying to GetStatus message: {e:?}");
+                }
+
+                Ok(())
+            }
         }
     }
 
@@ -476,13 +492,6 @@ where
             }
 
             Effect::StartRound(height, round, proposer) => {
-                error!("Starting round {round} at height {height}");
-
-                self.gossip_consensus
-                    .cast(GossipConsensusMsg::PublishStatus(Status::new(
-                        height, round,
-                    )))?;
-
                 self.host.cast(HostMsg::StartRound {
                     height,
                     round,
