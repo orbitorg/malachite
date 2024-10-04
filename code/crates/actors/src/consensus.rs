@@ -274,10 +274,7 @@ where
                         Ok(())
                     }
 
-                    GossipEvent::Status(from, Status { height, round }) => {
-                        info!(%from, %height, %round, "Received peer status");
-                        Ok(())
-                    }
+                    GossipEvent::Status(_, _) => Ok(()),
 
                     GossipEvent::Vote(from, vote) => {
                         if let Err(e) = self

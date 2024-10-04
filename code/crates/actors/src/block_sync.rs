@@ -6,9 +6,10 @@ use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tokio::task::JoinHandle;
 
 use malachite_common::Context;
+use tracing::info;
 
 use crate::consensus::ConsensusRef;
-use crate::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef, GossipEvent};
+use crate::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef, GossipEvent, Status};
 use crate::util::forward::forward;
 
 pub type BlockSyncRef<Ctx> = ActorRef<Msg<Ctx>>;
@@ -82,8 +83,13 @@ where
         msg: Self::Msg,
         _state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
+        #[allow(clippy::single_match)]
         match msg {
-            Msg::GossipEvent(_event) => {}
+            Msg::GossipEvent(GossipEvent::Status(from, Status { height, round })) => {
+                info!(%from, %height, %round, "Received peer status");
+            }
+
+            _ => {}
         }
 
         Ok(())
