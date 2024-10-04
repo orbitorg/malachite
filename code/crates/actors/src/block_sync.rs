@@ -76,7 +76,7 @@ where
         })
     }
 
-    #[tracing::instrument(name = "node", skip_all)]
+    #[tracing::instrument(name = "blocksync", skip_all)]
     async fn handle(
         &self,
         _myself: ActorRef<Self::Msg>,

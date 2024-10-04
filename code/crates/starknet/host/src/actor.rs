@@ -175,7 +175,7 @@ impl StarknetHost {
 
         let all_parts = state.part_store.all_parts(height, round);
 
-        debug!("The store has {} blocks", state.part_store.blocks_stored());
+        // debug!("The store has {} blocks", state.part_store.blocks_stored());
 
         // TODO: Do more validations, e.g. there is no higher tx proposal part,
         //       check that we have received the proof, etc.

@@ -266,12 +266,12 @@ where
                     }
                 };
 
-                debug!(
-                    %from,
-                    stream_id = %msg.stream_id,
-                    sequence = %msg.sequence,
-                    "Received proposal part"
-                );
+                // debug!(
+                //     %from,
+                //     stream_id = %msg.stream_id,
+                //     sequence = %msg.sequence,
+                //     "Received proposal part"
+                // );
 
                 self.publish(GossipEvent::ProposalPart(from, msg), subscribers);
             }
@@ -290,7 +290,7 @@ where
                     return Ok(());
                 }
 
-                debug!(%from, height = %status.height, round = %status.round, "Received status");
+                // debug!(%from, height = %status.height, round = %status.round, "Received status");
 
                 self.publish(
                     GossipEvent::Status(status.peer_id, Status::new(status.height, status.round)),
