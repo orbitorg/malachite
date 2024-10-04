@@ -13,7 +13,11 @@ pub enum Channel {
 
 impl Channel {
     pub fn all() -> &'static [Channel] {
-        &[Channel::Consensus, Channel::ProposalParts]
+        &[
+            Channel::Consensus,
+            Channel::ProposalParts,
+            Channel::BlockSync,
+        ]
     }
 
     pub fn to_gossipsub_topic(self) -> gossipsub::IdentTopic {

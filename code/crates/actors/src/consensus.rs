@@ -13,7 +13,7 @@ use malachite_consensus::Effect;
 use malachite_metrics::Metrics;
 use malachite_node::config::TimeoutConfig;
 
-use crate::gossip_consensus::{GossipConsensusRef, GossipEvent, Msg as GossipConsensusMsg};
+use crate::gossip_consensus::{GossipConsensusRef, GossipEvent, Msg as GossipConsensusMsg, Status};
 use crate::host::{HostMsg, HostRef, LocallyProposedValue, ProposedValue};
 use crate::util::forward::forward;
 use crate::util::timers::{TimeoutElapsed, TimerScheduler};
@@ -231,7 +231,7 @@ where
                             return Ok(());
                         }
 
-                        info!("Connected to peer {peer_id}");
+                        info!(%peer_id, "Connected to peer");
 
                         let connected_peers = state.connected_peers.len();
                         let total_peers = state.consensus.driver.validator_set.count() - 1;
@@ -263,7 +263,7 @@ where
                     }
 
                     GossipEvent::PeerDisconnected(peer_id) => {
-                        info!("Disconnected from peer {peer_id}");
+                        info!(%peer_id, "Disconnected from peer");
 
                         if state.connected_peers.remove(&peer_id) {
                             self.metrics.connected_peers.dec();
@@ -271,6 +271,11 @@ where
                             // TODO: pause/stop consensus, if necessary
                         }
 
+                        Ok(())
+                    }
+
+                    GossipEvent::Status(from, Status { height, round }) => {
+                        info!(%from, %height, %round, "Received peer status");
                         Ok(())
                     }
 
@@ -474,6 +479,13 @@ where
             }
 
             Effect::StartRound(height, round, proposer) => {
+                error!("Starting round {round} at height {height}");
+
+                self.gossip_consensus
+                    .cast(GossipConsensusMsg::PublishStatus(Status::new(
+                        height, round,
+                    )))?;
+
                 self.host.cast(HostMsg::StartRound {
                     height,
                     round,
@@ -485,7 +497,7 @@ where
 
             Effect::Broadcast(gossip_msg) => {
                 self.gossip_consensus
-                    .cast(GossipConsensusMsg::BroadcastMsg(gossip_msg))
+                    .cast(GossipConsensusMsg::Publish(gossip_msg))
                     .map_err(|e| eyre!("Error when broadcasting gossip message: {e:?}"))?;
 
                 Ok(())

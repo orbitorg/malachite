@@ -1,10 +1,11 @@
-use malachite_gossip_consensus::Bytes;
 use prost::Message;
 
 use malachite_actors::util::codec::NetworkCodec;
 use malachite_actors::util::streaming::{StreamContent, StreamMessage};
+use malachite_blocksync::Status;
 use malachite_common::{SignedProposal, SignedVote};
 use malachite_consensus::SignedConsensusMsg;
+use malachite_gossip_consensus::Bytes;
 use malachite_proto::{Error as ProtoError, Protobuf};
 use malachite_starknet_host::mock::context::MockContext;
 use malachite_starknet_host::types::Vote;
@@ -84,4 +85,50 @@ impl NetworkCodec<MockContext> for ProtobufCodec {
 
         Ok(Bytes::from(p2p_msg.to_bytes()?))
     }
+
+    fn decode_status(bytes: Bytes) -> Result<Status<MockContext>, Self::Error> {
+        // Temporary hack until we define Protobuf messages for the status
+
+        use libp2p_identity::PeerId;
+        use malachite_common::Round;
+        use malachite_starknet_p2p_types::Height;
+        use std::str::FromStr;
+
+        let json: JsonStatus =
+            serde_json::from_slice(&bytes).map_err(|e| ProtoError::Other(e.to_string()))?;
+
+        Ok(Status {
+            peer_id: PeerId::from_str(&json.peer_id)
+                .map_err(|e| ProtoError::Other(e.to_string()))?,
+            height: Height::new(json.height),
+            round: Round::new(json.round),
+        })
+    }
+
+    fn encode_status(status: Status<MockContext>) -> Result<Bytes, Self::Error> {
+        // Temporary hack until we define Protobuf messages for the status
+
+        use prost::bytes::BufMut;
+        use prost::bytes::BytesMut;
+
+        let mut buf = BytesMut::new().writer();
+
+        let json = JsonStatus {
+            peer_id: status.peer_id.to_string(),
+            height: status.height.as_u64(),
+            round: status.round.as_i64(),
+        };
+
+        serde_json::to_writer(&mut buf, &json).map_err(|e| ProtoError::Other(e.to_string()))?;
+
+        Ok(buf.into_inner().freeze())
+    }
+}
+
+// Temporary hack until we define Protobuf messages for the status
+#[derive(serde::Serialize, serde::Deserialize)]
+struct JsonStatus {
+    peer_id: String,
+    height: u64,
+    round: i64,
 }

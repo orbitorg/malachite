@@ -2331,6 +2331,7 @@ dependencies = [
  "derive-where",
  "eyre",
  "libp2p",
+ "malachite-blocksync",
  "malachite-common",
  "malachite-consensus",
  "malachite-gossip-consensus",
@@ -2341,6 +2342,16 @@ dependencies = [
  "ractor",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "malachite-blocksync"
+version = "0.1.0"
+dependencies = [
+ "derive-where",
+ "displaydoc",
+ "libp2p-identity",
+ "malachite-common",
 ]
 
 [[package]]
@@ -2481,6 +2492,7 @@ dependencies = [
  "bytesize",
  "libp2p-identity",
  "malachite-actors",
+ "malachite-blocksync",
  "malachite-common",
  "malachite-consensus",
  "malachite-gossip-consensus",
@@ -2494,6 +2506,7 @@ dependencies = [
  "malachite-test",
  "prost",
  "rand",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",

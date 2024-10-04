@@ -1,3 +1,4 @@
+use malachite_blocksync::Status;
 use malachite_common::Context;
 use malachite_consensus::SignedConsensusMsg;
 use malachite_gossip_consensus::Bytes;
@@ -10,6 +11,9 @@ pub trait NetworkCodec<Ctx: Context>: Sync + Send + 'static {
 
     fn decode_msg(bytes: Bytes) -> Result<SignedConsensusMsg<Ctx>, Self::Error>;
     fn encode_msg(msg: SignedConsensusMsg<Ctx>) -> Result<Bytes, Self::Error>;
+
+    fn decode_status(bytes: Bytes) -> Result<Status<Ctx>, Self::Error>;
+    fn encode_status(status: Status<Ctx>) -> Result<Bytes, Self::Error>;
 
     fn decode_stream_msg<T>(bytes: Bytes) -> Result<StreamMessage<T>, Self::Error>
     where

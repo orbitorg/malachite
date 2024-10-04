@@ -1,25 +1,36 @@
 use bytes::Bytes;
+use libp2p::PeerId;
 use tokio::sync::mpsc;
 use tokio::task;
 
 use crate::{Channel, CtrlMsg, Event};
 
 pub struct RecvHandle {
+    peer_id: PeerId,
     rx_event: mpsc::Receiver<Event>,
 }
 
 impl RecvHandle {
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
+    }
+
     pub async fn recv(&mut self) -> Option<Event> {
         self.rx_event.recv().await
     }
 }
 
 pub struct CtrlHandle {
+    peer_id: PeerId,
     tx_ctrl: mpsc::Sender<CtrlMsg>,
     task_handle: task::JoinHandle<()>,
 }
 
 impl CtrlHandle {
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
+    }
+
     pub async fn publish(&self, channel: Channel, data: Bytes) -> Result<(), eyre::Report> {
         self.tx_ctrl.send(CtrlMsg::Publish(channel, data)).await?;
         Ok(())
@@ -43,23 +54,31 @@ impl CtrlHandle {
 }
 
 pub struct Handle {
+    peer_id: PeerId,
     recv: RecvHandle,
     ctrl: CtrlHandle,
 }
 
 impl Handle {
     pub fn new(
+        peer_id: PeerId,
         tx_ctrl: mpsc::Sender<CtrlMsg>,
         rx_event: mpsc::Receiver<Event>,
         task_handle: task::JoinHandle<()>,
     ) -> Self {
         Self {
-            recv: RecvHandle { rx_event },
+            peer_id,
+            recv: RecvHandle { peer_id, rx_event },
             ctrl: CtrlHandle {
+                peer_id,
                 tx_ctrl,
                 task_handle,
             },
         }
+    }
+
+    pub fn peer_id(&self) -> PeerId {
+        self.peer_id
     }
 
     pub fn split(self) -> (RecvHandle, CtrlHandle) {

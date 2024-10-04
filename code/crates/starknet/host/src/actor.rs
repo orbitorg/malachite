@@ -262,13 +262,13 @@ impl Actor for StarknetHost {
                     sequence += 1;
 
                     self.gossip_consensus
-                        .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
+                        .cast(GossipConsensusMsg::PublishProposalPart(msg))?;
                 }
 
                 let msg = StreamMessage::new(stream_id, sequence, StreamContent::Fin(true));
 
                 self.gossip_consensus
-                    .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
+                    .cast(GossipConsensusMsg::PublishProposalPart(msg))?;
 
                 let block_hash = rx_hash.await?;
                 debug!("Got block with hash: {block_hash}");

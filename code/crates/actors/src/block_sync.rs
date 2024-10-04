@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use derive_where::derive_where;
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tokio::task::JoinHandle;
-use tracing::info;
 
 use malachite_common::Context;
 
@@ -84,9 +83,7 @@ where
         _state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
-            Msg::GossipEvent(event) => {
-                info!("Received gossip event: {event:?}");
-            }
+            Msg::GossipEvent(_event) => {}
         }
 
         Ok(())
