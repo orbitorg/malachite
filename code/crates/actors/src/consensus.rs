@@ -13,10 +13,12 @@ use malachite_consensus::Effect;
 use malachite_metrics::Metrics;
 use malachite_node::config::TimeoutConfig;
 
+use crate::block_sync::Msg as BlockSyncMsg;
 use crate::gossip_consensus::{GossipConsensusRef, GossipEvent, Msg as GossipConsensusMsg, Status};
 use crate::host::{HostMsg, HostRef, LocallyProposedValue, ProposedValue};
 use crate::util::timers::{TimeoutElapsed, TimerScheduler};
 
+use crate::block_sync::BlockSyncRef;
 pub use malachite_consensus::Params as ConsensusParams;
 pub use malachite_consensus::State as ConsensusState;
 
@@ -33,6 +35,7 @@ where
     timeout_config: TimeoutConfig,
     gossip_consensus: GossipConsensusRef<Ctx>,
     host: HostRef<Ctx>,
+    block_sync: BlockSyncRef<Ctx>,
     metrics: Metrics,
     tx_decision: Option<TxDecision<Ctx>>,
 }
@@ -126,12 +129,14 @@ impl<Ctx> Consensus<Ctx>
 where
     Ctx: Context,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: Ctx,
         params: ConsensusParams<Ctx>,
         timeout_config: TimeoutConfig,
         gossip_consensus: GossipConsensusRef<Ctx>,
         host: HostRef<Ctx>,
+        block_sync: BlockSyncRef<Ctx>,
         metrics: Metrics,
         tx_decision: Option<TxDecision<Ctx>>,
     ) -> Self {
@@ -141,6 +146,7 @@ where
             timeout_config,
             gossip_consensus,
             host,
+            block_sync,
             metrics,
             tx_decision,
         }
@@ -153,6 +159,7 @@ where
         timeout_config: TimeoutConfig,
         gossip_consensus: GossipConsensusRef<Ctx>,
         host: HostRef<Ctx>,
+        block_sync: BlockSyncRef<Ctx>,
         metrics: Metrics,
         tx_decision: Option<TxDecision<Ctx>>,
     ) -> Result<ActorRef<Msg<Ctx>>, ractor::SpawnErr> {
@@ -162,6 +169,7 @@ where
             timeout_config,
             gossip_consensus,
             host,
+            block_sync,
             metrics,
             tx_decision,
         );
@@ -542,6 +550,10 @@ where
                         consensus: myself.clone(),
                     })
                     .map_err(|e| eyre!("Error when sending decided value to host: {e:?}"))?;
+
+                self.block_sync
+                    .cast(BlockSyncMsg::Decided { height })
+                    .map_err(|e| eyre!("Error when sending decided height to blocksync: {e:?}"))?;
 
                 Ok(())
             }

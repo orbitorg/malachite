@@ -56,6 +56,8 @@ pub async fn spawn_node_actor(
     )
     .await;
 
+    let block_sync = spawn_block_sync_actor(ctx.clone(), gossip_consensus.clone()).await;
+
     let start_height = Height::new(1);
 
     // Spawn consensus
@@ -67,13 +69,11 @@ pub async fn spawn_node_actor(
         cfg,
         gossip_consensus.clone(),
         host.clone(),
+        block_sync.clone(),
         metrics,
         tx_decision,
     )
     .await;
-
-    let block_sync =
-        spawn_block_sync_actor(ctx.clone(), gossip_consensus.clone(), consensus.clone()).await;
 
     // Spawn the node actor
     let node = Node::new(
@@ -95,9 +95,8 @@ pub async fn spawn_node_actor(
 async fn spawn_block_sync_actor(
     ctx: MockContext,
     gossip_consensus: GossipConsensusRef<MockContext>,
-    consensus: ConsensusRef<MockContext>,
 ) -> BlockSyncRef<MockContext> {
-    let block_sync = BlockSync::new(ctx, gossip_consensus, consensus);
+    let block_sync = BlockSync::new(ctx, gossip_consensus);
     block_sync.spawn().await.unwrap().0
 }
 
@@ -110,6 +109,7 @@ async fn spawn_consensus_actor(
     cfg: NodeConfig,
     gossip_consensus: GossipConsensusRef<MockContext>,
     host: HostRef<MockContext>,
+    block_sync: BlockSyncRef<MockContext>,
     metrics: Metrics,
     tx_decision: Option<mpsc::Sender<(Height, Round, BlockHash)>>,
 ) -> ConsensusRef<MockContext> {
@@ -126,6 +126,7 @@ async fn spawn_consensus_actor(
         cfg.consensus.timeouts,
         gossip_consensus,
         host,
+        block_sync,
         metrics,
         tx_decision,
     )

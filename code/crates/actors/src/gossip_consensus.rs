@@ -84,7 +84,7 @@ pub enum State<Ctx: Context> {
 #[derive_where(Clone, Debug, PartialEq, Eq)]
 pub struct Status<Ctx: Context> {
     pub height: Ctx::Height,
-    pub round: Round,
+    pub round: Round, // todo - remove
 }
 
 impl<Ctx: Context> Status<Ctx> {

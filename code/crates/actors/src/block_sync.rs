@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::time::Duration;
 
@@ -6,10 +7,10 @@ use derive_where::derive_where;
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tokio::task::JoinHandle;
 
-use malachite_common::Context;
-use tracing::info;
+use malachite_common::{Context, Round};
+use malachite_gossip_consensus::PeerId;
+use tracing::{info, trace};
 
-use crate::consensus::{ConsensusMsg, ConsensusRef};
 use crate::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef, GossipEvent, Status};
 
 pub type BlockSyncRef<Ctx> = ActorRef<Msg<Ctx>>;
@@ -18,6 +19,30 @@ pub type BlockSyncRef<Ctx> = ActorRef<Msg<Ctx>>;
 pub enum Msg<Ctx: Context> {
     Tick,
     GossipEvent(GossipEvent<Ctx>),
+
+    // Consensus has decided on a value
+    Decided { height: Ctx::Height },
+}
+
+#[derive_where(Clone, Debug, Default)]
+struct BlockSyncState<Ctx>
+where
+    Ctx: Context,
+{
+    // Current Height
+    current_height: Ctx::Height,
+
+    // The set of peers we are connected to in order to get blocks and certificates.
+    peers: BTreeMap<PeerId, Ctx::Height>,
+}
+
+impl<Ctx> BlockSyncState<Ctx>
+where
+    Ctx: Context,
+{
+    pub fn store_peer_height(&mut self, peer: PeerId, height: Ctx::Height) {
+        self.peers.insert(peer, height);
+    }
 }
 
 impl<Ctx: Context> From<GossipEvent<Ctx>> for Msg<Ctx> {
@@ -34,13 +59,15 @@ pub struct Args {
 impl Default for Args {
     fn default() -> Self {
         Self {
-            status_update_interval: Duration::from_secs(1),
+            status_update_interval: Duration::from_secs(10),
         }
     }
 }
 
 #[derive_where(Debug)]
 pub struct State<Ctx: Context> {
+    /// The state of the blocksync state machine
+    blocksync: BlockSyncState<Ctx>,
     ticker: JoinHandle<()>,
     marker: PhantomData<Ctx>,
 }
@@ -49,22 +76,16 @@ pub struct State<Ctx: Context> {
 pub struct BlockSync<Ctx: Context> {
     ctx: Ctx,
     gossip_consensus: GossipConsensusRef<Ctx>,
-    consensus: ConsensusRef<Ctx>,
 }
 
 impl<Ctx> BlockSync<Ctx>
 where
     Ctx: Context,
 {
-    pub fn new(
-        ctx: Ctx,
-        gossip_consensus: GossipConsensusRef<Ctx>,
-        consensus: ConsensusRef<Ctx>,
-    ) -> Self {
+    pub fn new(ctx: Ctx, gossip_consensus: GossipConsensusRef<Ctx>) -> Self {
         Self {
             ctx,
             gossip_consensus,
-            consensus,
         }
     }
 
@@ -101,6 +122,7 @@ where
         });
 
         Ok(State {
+            blocksync: BlockSyncState::default(),
             ticker,
             marker: PhantomData,
         })
@@ -111,25 +133,35 @@ where
         &self,
         _myself: ActorRef<Self::Msg>,
         msg: Self::Msg,
-        _state: &mut Self::State,
+        state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         #[allow(clippy::single_match)]
         match msg {
-            Msg::Tick => {
-                let Ok(status) = ractor::call!(self.consensus, ConsensusMsg::GetStatus) else {
-                    tracing::error!("Failed to get consensus status");
-                    return Ok(());
-                };
+            Msg::GossipEvent(event) => {
+                if let GossipEvent::Status(p, ref status) = event {
+                    trace!("SYNC Received Status event: {event:?}");
+                    state.blocksync.store_peer_height(p, status.height);
+                    if status.height < state.blocksync.current_height {
+                        info!(
+                            "SYNC REQUIRED peer falling behind {p} at {}, my height {}",
+                            status.height, state.blocksync.current_height
+                        );
+                    }
+                }
+            }
 
+            Msg::Decided { height, .. } => {
+                state.blocksync.current_height = height;
+            }
+
+            Msg::Tick => {
+                let status = Status {
+                    height: state.blocksync.current_height,
+                    round: Round::Nil,
+                };
                 self.gossip_consensus
                     .cast(GossipConsensusMsg::PublishStatus(status))?;
             }
-
-            Msg::GossipEvent(GossipEvent::Status(from, Status { height, round })) => {
-                info!(%from, %height, %round, "Received peer status");
-            }
-
-            Msg::GossipEvent(_) => (), // We don't care about other gossip events,
         }
 
         Ok(())
