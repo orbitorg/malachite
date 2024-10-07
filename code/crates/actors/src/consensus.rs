@@ -16,6 +16,7 @@ use malachite_node::config::TimeoutConfig;
 use crate::block_sync::Msg as BlockSyncMsg;
 use crate::gossip_consensus::{GossipConsensusRef, GossipEvent, Msg as GossipConsensusMsg, Status};
 use crate::host::{HostMsg, HostRef, LocallyProposedValue, ProposedValue};
+use crate::util::forward::forward;
 use crate::util::timers::{TimeoutElapsed, TimerScheduler};
 
 use crate::block_sync::BlockSyncRef;
@@ -62,19 +63,13 @@ pub enum Msg<Ctx: Context> {
     GetStatus(RpcReplyPort<Status<Ctx>>),
 }
 
-impl<Ctx: Context> From<GossipEvent<Ctx>> for Msg<Ctx> {
-    fn from(msg: GossipEvent<Ctx>) -> Self {
-        Msg::GossipEvent(msg)
-    }
-}
+type ConsensusInput<Ctx> = malachite_consensus::Input<Ctx>;
 
 impl<Ctx: Context> From<TimeoutElapsed<Timeout>> for Msg<Ctx> {
     fn from(msg: TimeoutElapsed<Timeout>) -> Self {
         Msg::TimeoutElapsed(msg)
     }
 }
-
-type ConsensusInput<Ctx> = malachite_consensus::Input<Ctx>;
 
 type Timers<Ctx> = TimerScheduler<Timeout, Msg<Ctx>>;
 
@@ -576,8 +571,10 @@ where
         myself: ActorRef<Msg<Ctx>>,
         _args: (),
     ) -> Result<State<Ctx>, ActorProcessingErr> {
+        let forward = forward(myself.clone(), Some(myself.get_cell()), Msg::GossipEvent).await?;
+
         self.gossip_consensus
-            .cast(GossipConsensusMsg::Subscribe(Box::new(myself.clone())))?;
+            .cast(GossipConsensusMsg::Subscribe(forward))?;
 
         Ok(State {
             timers: Timers::new(myself),
