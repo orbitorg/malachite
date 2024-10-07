@@ -11,6 +11,7 @@ use tracing::info;
 
 use crate::consensus::{ConsensusMsg, ConsensusRef};
 use crate::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef, GossipEvent, Status};
+use crate::util::forward::forward;
 
 pub type BlockSyncRef<Ctx> = ActorRef<Msg<Ctx>>;
 
@@ -18,12 +19,6 @@ pub type BlockSyncRef<Ctx> = ActorRef<Msg<Ctx>>;
 pub enum Msg<Ctx: Context> {
     Tick,
     GossipEvent(GossipEvent<Ctx>),
-}
-
-impl<Ctx: Context> From<GossipEvent<Ctx>> for Msg<Ctx> {
-    fn from(event: GossipEvent<Ctx>) -> Self {
-        Msg::GossipEvent(event)
-    }
 }
 
 #[derive(Debug)]
@@ -87,8 +82,10 @@ where
         myself: ActorRef<Self::Msg>,
         args: Args,
     ) -> Result<Self::State, ActorProcessingErr> {
+        let forward = forward(myself.clone(), Some(myself.get_cell()), Msg::GossipEvent).await?;
+
         self.gossip_consensus
-            .cast(GossipConsensusMsg::Subscribe(Box::new(myself.clone())))?;
+            .cast(GossipConsensusMsg::Subscribe(forward))?;
 
         let ticker = tokio::spawn(async move {
             loop {
