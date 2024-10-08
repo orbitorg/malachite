@@ -5,6 +5,7 @@
 pub mod actor;
 pub mod build_proposal;
 pub mod build_value;
+pub mod client;
 pub mod context;
 pub mod impls;
 pub mod part_store;

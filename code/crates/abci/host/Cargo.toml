@@ -16,17 +16,22 @@ malachite-gossip-mempool.workspace     = true
 malachite-proto.workspace              = true
 malachite-abci-p2p-types.workspace = true
 
-bytes.workspace           = true
-starknet-core.workspace   = true
+bytes.workspace            = true
+starknet-core.workspace    = true
 # async-trait.workspace     = true
-bytesize.workspace        = true
-derive-where.workspace    = true
-eyre.workspace            = true
-ractor.workspace          = true
-rand.workspace            = true
-sha3.workspace            = true
-tokio.workspace           = true
-tracing.workspace         = true
+bytesize.workspace         = true
+derive-where.workspace     = true
+eyre.workspace             = true
+prost.workspace            = true
+ractor.workspace           = true
+rand.workspace             = true
+sha3.workspace             = true
+tokio.workspace            = true
+tracing.workspace          = true
+tendermint.workspace       = true
+tendermint-proto.workspace = true
+tokio-util                 = { workspace = true, features = ["codec"] }
+futures-util = "0.3.31"
 
 [lints]
 workspace = true
