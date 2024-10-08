@@ -22,6 +22,7 @@ use malachite_metrics::Metrics;
 
 use crate::build_proposal::build_proposal_parts;
 use crate::build_value::{build_value_from_part, build_value_from_parts};
+use crate::client::AbciClient;
 use crate::context::AbciContext;
 use crate::part_store::PartStore;
 use crate::streaming::PartStreamsMap;
@@ -50,19 +51,7 @@ pub struct HostState {
     pub part_store: PartStore<AbciContext>,
     pub part_streams_map: PartStreamsMap,
     pub next_stream_id: StreamId,
-}
-
-impl Default for HostState {
-    fn default() -> Self {
-        Self {
-            height: Height::new(0),
-            round: Round::Nil,
-            proposer: None,
-            part_store: PartStore::default(),
-            part_streams_map: PartStreamsMap::default(),
-            next_stream_id: StreamId::default(),
-        }
-    }
+    pub abci_client: AbciClient,
 }
 
 pub type HostRef = malachite_actors::host::HostRef<AbciContext>;
@@ -86,12 +75,8 @@ impl AbciHost {
         gossip_consensus: GossipConsensusRef<AbciContext>,
         metrics: Metrics,
     ) -> Result<HostRef, SpawnErr> {
-        let (actor_ref, _) = Actor::spawn(
-            None,
-            Self::new(params, gossip_consensus, metrics),
-            HostState::default(),
-        )
-        .await?;
+        let (actor_ref, _) =
+            Actor::spawn(None, Self::new(params, gossip_consensus, metrics), ()).await?;
 
         Ok(actor_ref)
     }
@@ -99,16 +84,26 @@ impl AbciHost {
 
 #[async_trait]
 impl Actor for AbciHost {
-    type Arguments = HostState;
+    type Arguments = ();
     type State = HostState;
     type Msg = HostMsg;
 
     async fn pre_start(
         &self,
         _myself: HostRef,
-        initial_state: Self::State,
+        args: (),
     ) -> Result<Self::State, ActorProcessingErr> {
-        Ok(initial_state)
+        let state = HostState {
+            height: Height::new(0),
+            round: Round::Nil,
+            proposer: None,
+            part_store: PartStore::default(),
+            part_streams_map: PartStreamsMap::default(),
+            next_stream_id: StreamId::default(),
+            abci_client: AbciClient::connect("/tmp/abci.sock").await?,
+        };
+
+        Ok(state)
     }
 
     #[tracing::instrument("abci.host", skip_all)]
