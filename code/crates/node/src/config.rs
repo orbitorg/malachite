@@ -10,15 +10,19 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum App {
-    #[default]
     #[serde(rename = "starknet")]
     Starknet,
+
+    #[default]
+    #[serde(rename = "abci")]
+    Abci,
 }
 
 impl fmt::Display for App {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Starknet => write!(f, "starknet"),
+            Self::Abci => write!(f, "abci"),
         }
     }
 }
@@ -29,7 +33,10 @@ impl FromStr for App {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "starknet" => Ok(Self::Starknet),
-            _ => Err(format!("unknown application: {s}, available: starknet")),
+            "abci" => Ok(Self::Abci),
+            _ => Err(format!(
+                "unknown application: {s}, available: starknet, abci"
+            )),
         }
     }
 }

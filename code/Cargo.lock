@@ -2324,6 +2324,78 @@ dependencies = [
 ]
 
 [[package]]
+name = "malachite-abci-app"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytesize",
+ "libp2p-identity",
+ "malachite-abci-host",
+ "malachite-abci-p2p-proto",
+ "malachite-abci-p2p-types",
+ "malachite-actors",
+ "malachite-common",
+ "malachite-consensus",
+ "malachite-gossip-consensus",
+ "malachite-gossip-mempool",
+ "malachite-metrics",
+ "malachite-node",
+ "malachite-proto",
+ "malachite-test",
+ "prost",
+ "rand",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "malachite-abci-host"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "bytesize",
+ "derive-where",
+ "eyre",
+ "malachite-abci-p2p-types",
+ "malachite-actors",
+ "malachite-common",
+ "malachite-gossip-mempool",
+ "malachite-metrics",
+ "malachite-proto",
+ "ractor",
+ "rand",
+ "sha3",
+ "starknet-core",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "malachite-abci-p2p-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-build",
+]
+
+[[package]]
+name = "malachite-abci-p2p-types"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "malachite-abci-p2p-proto",
+ "malachite-common",
+ "malachite-proto",
+ "rand",
+ "serde",
+ "sha3",
+ "starknet-core",
+ "starknet-crypto",
+]
+
+[[package]]
 name = "malachite-actors"
 version = "0.1.0"
 dependencies = [
@@ -2354,6 +2426,8 @@ dependencies = [
  "config",
  "directories",
  "itertools",
+ "malachite-abci-app",
+ "malachite-abci-host",
  "malachite-common",
  "malachite-metrics",
  "malachite-node",

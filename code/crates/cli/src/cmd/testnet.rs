@@ -11,10 +11,11 @@ use rand::rngs::OsRng;
 use rand::{Rng, SeedableRng};
 use tracing::info;
 
+use malachite_abci_app::node::AbciNode;
 use malachite_common::{PrivateKey, PublicKey};
 use malachite_node::config::*;
 use malachite_node::Node;
-use malachite_starknet_app::node::StarknetNode;
+// use malachite_starknet_app::node::StarknetNode;
 
 use crate::args::Args;
 use crate::cmd::init::{save_config, save_genesis, save_priv_validator_key};
@@ -84,7 +85,8 @@ impl TestnetCmd {
     /// Execute the testnet command
     pub fn run(&self, home_dir: &Path, log_level: LogLevel, log_format: LogFormat) -> Result<()> {
         let node = match self.app {
-            App::Starknet => StarknetNode,
+            App::Abci => AbciNode,
+            App::Starknet => unreachable!(), // StarknetNode,
         };
 
         let private_keys = generate_private_keys(&node, self.nodes, self.deterministic);
