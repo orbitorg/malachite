@@ -8,7 +8,7 @@ use tokio::net::UnixStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 pub struct AbciClient {
-    read: FramedRead<OwnedReadHalf, Decode<tendermint_proto::v0_38::abci::ResponsePrepareProposal>>,
+    read: FramedRead<OwnedReadHalf, Decode<tendermint_proto::v0_38::abci::Response>>,
     write: FramedWrite<OwnedWriteHalf, Encode<abci::Request>>,
 }
 
@@ -23,10 +23,7 @@ impl AbciClient {
         })
     }
 
-    pub async fn request(
-        &mut self,
-        request: abci::Request,
-    ) -> Result<abci::ResponsePrepareProposal, BoxError> {
+    pub async fn request(&mut self, request: abci::Request) -> Result<abci::Response, BoxError> {
         self.write.send(request).await?;
         self.read.next().await.ok_or("no response")?
     }

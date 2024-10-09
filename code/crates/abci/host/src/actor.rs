@@ -15,6 +15,7 @@ use tendermint::v0_38::abci::request::PrepareProposal;
 use tendermint::v0_38::abci::response::PrepareProposal as prep_response;
 use tendermint::{TendermintKey, Time};
 
+use tendermint_proto::abci::RequestProcessProposal;
 use tendermint_proto::v0_38::abci::{
     self, Request, RequestPrepareProposal, ResponsePrepareProposal,
 };
@@ -38,6 +39,7 @@ use crate::part_store::PartStore;
 use crate::streaming::PartStreamsMap;
 use crate::types::{Address, BlockHash, Height, Proposal, ProposalPart, ValidatorSet};
 use malachite_gossip_mempool::BoxError;
+use std::str;
 use std::time;
 pub struct HostParams {
     pub address: Address,
@@ -152,7 +154,7 @@ impl Actor for AbciHost {
                 let prep_proposal = RequestPrepareProposal {
                     max_tx_bytes: 10,
                     txs: Vec::new(),
-                    height: 1,
+                    height: height.as_u64() as i64,
                     local_last_commit: None,
                     misbehavior: Vec::new(),
                     time: None,
@@ -167,32 +169,26 @@ impl Actor for AbciHost {
                     ),
                 };
                 info!("XXXX");
-                let txes: tendermint_proto::v0_38::abci::ResponsePrepareProposal =
-                    state.abci_client.request(a_req).await?;
+                let txs_value = state.abci_client.request(a_req).await?.value;
                 info!(".YYY");
-                let x = txes.txs;
+                let x = txs_value.unwrap();
 
-                // match x {
-                //     Some(tendermint_proto::v0_38::abci::response::Value::PrepareProposal(_)) => {
-                //         print!("Found response preparep roposal");
-                //     }
-                //     None => print!("Not found"),
-                //     _ => {
-                //         print!("should nt0 happen;");
-                //         todo!("should not happen");
-                //     }
-                // };
+                let tx_array: Vec<bytes::Bytes> = match x {
+                    tendermint_proto::v0_38::abci::response::Value::PrepareProposal(prep) => {
+                        prep.txs
+                    }
+                    _ => {
+                        print!("should nt0 happen;");
+                        Vec::new()
+                    }
+                };
+                for tx in &tx_array {
+                    let tx_vec = tx.to_vec();
+                    let tx_string = str::from_utf8(&tx_vec).unwrap().to_string();
+                    print!("{}", tx_string);
+                }
 
-                // let resp_alue: tendermint_proto::tendermint::v0_38::abci::ResponsePrepareProposal =
-                //     Some(txes.);
-
-                //  = abci::Response {
-                //     value: Some(tendermint_proto::abci::response::Value::PrepareProposal(
-                //         txes.value,
-                //     )),
-                // };
-
-                let txes = x.into_iter().map(Transaction::new).collect();
+                let txes = tx_array.into_iter().map(Transaction::new).collect();
 
                 let (block_hash, parts) =
                     build_proposal_parts(height, round, &self.params, txes).await?;
@@ -305,10 +301,41 @@ impl Actor for AbciHost {
                 self.metrics.finalized_txes.inc_by(tx_count as u64);
 
                 // Prune the PartStore of all parts for heights lower than `state.height`
-                state.part_store.prune(state.height);
 
                 // Notify ABCI App of the decision
-                todo!("Notify ABCI App of the decision");
+                let process_proposal = RequestProcessProposal {
+                    txs: Vec::new(),
+                    height: height.as_u64() as i64,
+                    proposed_last_commit: None,
+                    misbehavior: Vec::new(),
+                    hash: Bytes::new(),
+                    time: None,
+                    next_validators_hash: Bytes::new(),
+                    proposer_address: Bytes::new(),
+                };
+                let a_req = Request {
+                    value: Some(
+                        tendermint_proto::v0_38::abci::request::Value::ProcessProposal(
+                            process_proposal,
+                        ),
+                    ),
+                };
+                let response_process_proposal =
+                    state.abci_client.request(a_req).await?.value.unwrap();
+
+                let status = match response_process_proposal {
+                    tendermint_proto::v0_38::abci::response::Value::ProcessProposal(proc) => {
+                        proc.status
+                    }
+                    _ => {
+                        print!("should nt0 happen;");
+                        100
+                    }
+                };
+
+                info!("Proposal has been accepted if status not 100: {status}");
+                // TODO Call Finalize BLock , get the retain height and cal this from DECIDE
+                state.part_store.prune(state.height); // TODO This should come after Finalize Block
 
                 // Start the next height
                 consensus.cast(ConsensusMsg::StartHeight(state.height.increment()))?;
