@@ -1,16 +1,26 @@
 #![allow(unused_variables, unused_imports)]
 
 use std::ops::Deref;
+use std::ptr::null;
 use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use bytesize::ByteSize;
 use eyre::eyre;
+use prost::Message;
 use ractor::{async_trait, Actor, ActorProcessingErr, SpawnErr};
 use sha3::Digest;
+use tendermint::v0_38::abci::request::PrepareProposal;
+use tendermint::v0_38::abci::response::PrepareProposal as prep_response;
+use tendermint::{TendermintKey, Time};
+
+use tendermint_proto::v0_38::abci::{
+    self, Request, RequestPrepareProposal, ResponsePrepareProposal,
+};
 use tokio::time::Instant;
-use tracing::{debug, error, trace};
+use tokio_util::codec::Encoder;
+use tracing::{debug, error, info, trace};
 
 use malachite_abci_p2p_types::Transaction;
 use malachite_actors::consensus::ConsensusMsg;
@@ -22,12 +32,13 @@ use malachite_metrics::Metrics;
 
 use crate::build_proposal::build_proposal_parts;
 use crate::build_value::{build_value_from_part, build_value_from_parts};
-use crate::client::AbciClient;
+use crate::client::{AbciClient, Encode};
 use crate::context::AbciContext;
 use crate::part_store::PartStore;
 use crate::streaming::PartStreamsMap;
 use crate::types::{Address, BlockHash, Height, Proposal, ProposalPart, ValidatorSet};
-
+use malachite_gossip_mempool::BoxError;
+use std::time;
 pub struct HostParams {
     pub address: Address,
     pub initial_validator_set: ValidatorSet,
@@ -100,7 +111,7 @@ impl Actor for AbciHost {
             part_store: PartStore::default(),
             part_streams_map: PartStreamsMap::default(),
             next_stream_id: StreamId::default(),
-            abci_client: AbciClient::connect("/tmp/abci.sock").await?,
+            abci_client: AbciClient::connect("/tmp/kvstoreplusplus.sock").await?,
         };
 
         Ok(state)
@@ -122,7 +133,6 @@ impl Actor for AbciHost {
                 state.height = height;
                 state.round = round;
                 state.proposer = Some(proposer);
-
                 Ok(())
             }
 
@@ -134,11 +144,55 @@ impl Actor for AbciHost {
                 reply_to,
             } => {
                 let deadline = Instant::now() + timeout_duration;
-
+                info!("XXXX1");
                 debug!(%height, %round, "Building new proposal...");
 
-                let txes: Vec<Bytes> = todo!("Send PrepareProposal to the ABCI app");
-                let txes = txes.into_iter().map(Transaction::new).collect();
+                // let txes: Vec<Bytes> = todo!("Send PrepareProposal to the ABCI app");
+
+                let prep_proposal = RequestPrepareProposal {
+                    max_tx_bytes: 10,
+                    txs: Vec::new(),
+                    height: 1,
+                    local_last_commit: None,
+                    misbehavior: Vec::new(),
+                    time: None,
+                    next_validators_hash: Bytes::new(), // self.params.initial_validator_set,
+                    proposer_address: Bytes::new(),     //to_bytes(state.proposer),
+                };
+                let a_req = Request {
+                    value: Some(
+                        tendermint_proto::v0_38::abci::request::Value::PrepareProposal(
+                            prep_proposal,
+                        ),
+                    ),
+                };
+                info!("XXXX");
+                let txes: tendermint_proto::v0_38::abci::ResponsePrepareProposal =
+                    state.abci_client.request(a_req).await?;
+                info!(".YYY");
+                let x = txes.txs;
+
+                // match x {
+                //     Some(tendermint_proto::v0_38::abci::response::Value::PrepareProposal(_)) => {
+                //         print!("Found response preparep roposal");
+                //     }
+                //     None => print!("Not found"),
+                //     _ => {
+                //         print!("should nt0 happen;");
+                //         todo!("should not happen");
+                //     }
+                // };
+
+                // let resp_alue: tendermint_proto::tendermint::v0_38::abci::ResponsePrepareProposal =
+                //     Some(txes.);
+
+                //  = abci::Response {
+                //     value: Some(tendermint_proto::abci::response::Value::PrepareProposal(
+                //         txes.value,
+                //     )),
+                // };
+
+                let txes = x.into_iter().map(Transaction::new).collect();
 
                 let (block_hash, parts) =
                     build_proposal_parts(height, round, &self.params, txes).await?;
