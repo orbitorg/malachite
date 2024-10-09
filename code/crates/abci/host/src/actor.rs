@@ -146,7 +146,6 @@ impl Actor for AbciHost {
                 reply_to,
             } => {
                 let deadline = Instant::now() + timeout_duration;
-                info!("XXXX1");
                 debug!(%height, %round, "Building new proposal...");
 
                 // let txes: Vec<Bytes> = todo!("Send PrepareProposal to the ABCI app");
@@ -168,9 +167,7 @@ impl Actor for AbciHost {
                         ),
                     ),
                 };
-                info!("XXXX");
                 let txs_value = state.abci_client.request(a_req).await?.value;
-                info!(".YYY");
                 let x = txs_value.unwrap();
 
                 let tx_array: Vec<bytes::Bytes> = match x {
@@ -327,10 +324,7 @@ impl Actor for AbciHost {
                     tendermint_proto::v0_38::abci::response::Value::ProcessProposal(proc) => {
                         proc.status
                     }
-                    _ => {
-                        print!("should nt0 happen;");
-                        100
-                    }
+                    _ => 100,
                 };
 
                 info!("Proposal has been accepted if status not 100: {status}");

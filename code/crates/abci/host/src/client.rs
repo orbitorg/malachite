@@ -42,7 +42,6 @@ pub struct Decode<M> {
 
 impl<M> Default for Decode<M> {
     fn default() -> Self {
-        print!("Called");
         Self {
             state: DecodeState::Head,
             _marker: PhantomData,
@@ -63,11 +62,8 @@ impl<M: prost::Message + Default> Decoder for Decode<M> {
     type Error = BoxError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        print!("DECODING");
-
         match self.state {
             DecodeState::Head => {
-                print!("DECODING");
                 tracing::trace!(?src, "decoding head");
                 // we don't use decode_varint directly, because it advances the
                 // buffer regardless of success, but Decoder assumes that when
@@ -97,7 +93,6 @@ impl<M: prost::Message + Default> Decoder for Decode<M> {
                 self.decode(src)
             }
             DecodeState::Body { len } => {
-                print!("DECODING2");
                 if src.len() < len {
                     tracing::trace!(?self.state, src.len = src.len(), "waiting for body");
                     return Ok(None);
@@ -122,7 +117,6 @@ pub struct Encode<M> {
 
 impl<M> Default for Encode<M> {
     fn default() -> Self {
-        print!("ecalled");
         Self {
             _marker: PhantomData,
         }
@@ -133,7 +127,6 @@ impl<M: prost::Message + Sized + std::fmt::Debug> Encoder<M> for Encode<M> {
     type Error = BoxError;
 
     fn encode(&mut self, item: M, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        print!("ENCODING");
         let mut buf = BytesMut::new();
         item.encode(&mut buf)?;
         let buf = buf.freeze();
