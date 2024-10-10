@@ -13,7 +13,7 @@ use ractor::{async_trait, Actor, ActorProcessingErr, SpawnErr};
 use sha3::Digest;
 use tendermint::v0_38::abci::request::PrepareProposal;
 use tendermint::v0_38::abci::response::PrepareProposal as prep_response;
-use tendermint::{TendermintKey, Time};
+use tendermint::{proposal, TendermintKey, Time};
 
 use tendermint_proto::abci::RequestProcessProposal;
 use tendermint_proto::v0_38::abci::{
@@ -115,7 +115,7 @@ impl Actor for AbciHost {
             next_stream_id: StreamId::default(),
             abci_client: AbciClient::connect("/tmp/kvstoreplusplus.sock").await?,
         };
-
+        // TODO MAYBE INIT CHAIN AND MAYBE INFO
         Ok(state)
     }
 
@@ -148,8 +148,13 @@ impl Actor for AbciHost {
                 let deadline = Instant::now() + timeout_duration;
                 debug!(%height, %round, "Building new proposal...");
 
-                // let txes: Vec<Bytes> = todo!("Send PrepareProposal to the ABCI app");
-
+                let next_validators_hash = Bytes::from(
+                    self.params.initial_validator_set.get_keys()[0] // Todo: which validator are you looking from exactly?
+                        .as_bytes()
+                        .to_vec(),
+                );
+                let proposer_address =
+                    Bytes::from(state.proposer.clone().unwrap().as_bytes().to_vec());
                 let prep_proposal = RequestPrepareProposal {
                     max_tx_bytes: 10,
                     txs: Vec::new(),
@@ -157,8 +162,8 @@ impl Actor for AbciHost {
                     local_last_commit: None,
                     misbehavior: Vec::new(),
                     time: None,
-                    next_validators_hash: Bytes::new(), // self.params.initial_validator_set,
-                    proposer_address: Bytes::new(),     //to_bytes(state.proposer),
+                    next_validators_hash,
+                    proposer_address,
                 };
                 let a_req = Request {
                     value: Some(
@@ -174,15 +179,23 @@ impl Actor for AbciHost {
                     tendermint_proto::v0_38::abci::response::Value::PrepareProposal(prep) => {
                         prep.txs
                     }
+                    tendermint_proto::v0_38::abci::response::Value::Flush(_) => {
+                        todo!("Should not return flush here")
+                    }
+                    tendermint_proto::v0_38::abci::response::Value::Exception(exp) => {
+                        todo!("Exception")
+                    }
                     _ => {
-                        print!("should nt0 happen;");
-                        Vec::new()
+                        todo!("should nt0 happen;");
                     }
                 };
+
+                // This should be removed, just for debugging purposes, prints the transactions
+                print!("\nTransactions retrieved");
                 for tx in &tx_array {
                     let tx_vec = tx.to_vec();
-                    let tx_string = str::from_utf8(&tx_vec).unwrap().to_string();
-                    print!("{}", tx_string);
+                    let tx_string = str::from_utf8(&tx_vec).unwrap();
+                    print!("\n{}", tx_string);
                 }
 
                 let txes = tx_array.into_iter().map(Transaction::new).collect();
@@ -324,12 +337,15 @@ impl Actor for AbciHost {
                     tendermint_proto::v0_38::abci::response::Value::ProcessProposal(proc) => {
                         proc.status
                     }
-                    _ => 100,
+                    _ => {
+                        panic!("{:?}", response_process_proposal);
+                    }
                 };
-
-                info!("Proposal has been accepted if status not 100: {status}");
+                // TODO FINALIZE BLOCK AND COMMIT
+                info!("Proposal has been accepted if status is 1: {status}");
                 // TODO Call Finalize BLock , get the retain height and cal this from DECIDE
-                state.part_store.prune(state.height); // TODO This should come after Finalize Block
+
+                state.part_store.prune(state.height); // This is cleaning only internal actor state
 
                 // Start the next height
                 consensus.cast(ConsensusMsg::StartHeight(state.height.increment()))?;

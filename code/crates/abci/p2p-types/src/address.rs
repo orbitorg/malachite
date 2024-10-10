@@ -1,8 +1,8 @@
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
-use malachite_proto::{Error as ProtoError, Protobuf};
 use malachite_abci_p2p_proto as p2p_proto;
+use malachite_proto::{Error as ProtoError, Protobuf};
 
 use crate::PublicKey;
 
@@ -19,6 +19,11 @@ impl Address {
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn from_public_key(public_key: PublicKey) -> Self {
         Self(public_key)
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn as_bytes(&self) -> [u8; 32] {
+        self.0.as_bytes()
     }
 }
 

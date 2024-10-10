@@ -27,6 +27,23 @@ impl AbciClient {
         self.write.send(request).await?;
         self.read.next().await.ok_or("no response")?
     }
+
+    // The ABCI server expects flush to be acalled after every synchronous request.
+    // If the function above is used, the value won't be returned until Flush
+    // is called at a later time
+    pub async fn request_with_flush(
+        &mut self,
+        request: abci::Request,
+    ) -> Result<abci::Response, BoxError> {
+        self.write.send(request).await?;
+        let req = abci::Request {
+            value: Some(tendermint_proto::v0_38::abci::request::Value::Flush(
+                tendermint_proto::v0_38::abci::RequestFlush {},
+            )),
+        };
+        self.write.send(req).await?;
+        self.read.next().await.ok_or("no response")?
+    }
 }
 
 use std::marker::PhantomData;
