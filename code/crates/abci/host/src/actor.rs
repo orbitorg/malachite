@@ -13,9 +13,9 @@ use ractor::{async_trait, Actor, ActorProcessingErr, SpawnErr};
 use sha3::Digest;
 use tendermint::v0_38::abci::request::PrepareProposal;
 use tendermint::v0_38::abci::response::PrepareProposal as prep_response;
-use tendermint::{proposal, TendermintKey, Time};
+use tendermint::{proposal, tx, TendermintKey, Time};
 
-use tendermint_proto::abci::RequestProcessProposal;
+use tendermint_proto::abci::{RequestFinalizeBlock, RequestProcessProposal, ResponseFinalizeBlock};
 use tendermint_proto::v0_38::abci::{
     self, Request, RequestPrepareProposal, ResponsePrepareProposal,
 };
@@ -95,6 +95,35 @@ impl AbciHost {
     }
 }
 
+fn get_tx_bytes(all_parts: Vec<Arc<ProposalPart>>) -> Vec<Bytes> {
+    let transactions: Vec<_> = all_parts
+        .iter()
+        .map(|p| p.as_transactions().clone())
+        .into_iter()
+        .collect();
+
+    let all_transactions: Vec<malachite_abci_p2p_types::Transaction> = transactions
+        .iter()
+        .flatten()
+        .cloned()
+        .map(|x| x.clone().into_vec())
+        .flatten()
+        .collect();
+
+    let tx_bytes: Vec<Bytes> = all_transactions
+        .into_iter()
+        .map(|x: malachite_abci_p2p_types::Transaction| Bytes::from(x.as_bytes().to_vec()))
+        .collect();
+    return tx_bytes;
+}
+
+fn process_finalize_block_response(response: ResponseFinalizeBlock) -> Bytes {
+    // TODO Here is the processing and storing of events, tx responses etc.
+    // The number of returned tx_results is in Comet matched against the number of transactions
+    // in the proposal and this throws an error if it does not match.
+    return response.app_hash;
+}
+
 #[async_trait]
 impl Actor for AbciHost {
     type Arguments = ();
@@ -106,6 +135,13 @@ impl Actor for AbciHost {
         _myself: HostRef,
         args: (),
     ) -> Result<Self::State, ActorProcessingErr> {
+        let kvstore_socket = std::env::var("KVSTORE_SOCKET").unwrap();
+        print!("{}", kvstore_socket);
+
+        // INIT CHAIN
+
+        // INFO  to fill out the height and info the app sends to the consensus engine to sync up on
+        // current state
         let state = HostState {
             height: Height::new(0),
             round: Round::Nil,
@@ -113,9 +149,9 @@ impl Actor for AbciHost {
             part_store: PartStore::default(),
             part_streams_map: PartStreamsMap::default(),
             next_stream_id: StreamId::default(),
-            abci_client: AbciClient::connect("/tmp/kvstoreplusplus.sock").await?,
+            abci_client: AbciClient::connect(kvstore_socket).await?,
         };
-        // TODO MAYBE INIT CHAIN AND MAYBE INFO
+
         Ok(state)
     }
 
@@ -153,14 +189,16 @@ impl Actor for AbciHost {
                         .as_bytes()
                         .to_vec(),
                 );
+
+                // **** PREPARE PROPOSAL
                 let proposer_address =
                     Bytes::from(state.proposer.clone().unwrap().as_bytes().to_vec());
                 let prep_proposal = RequestPrepareProposal {
                     max_tx_bytes: 10,
                     txs: Vec::new(),
                     height: height.as_u64() as i64,
-                    local_last_commit: None,
-                    misbehavior: Vec::new(),
+                    local_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
+                    misbehavior: Vec::new(), // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
                     time: None,
                     next_validators_hash,
                     proposer_address,
@@ -172,21 +210,19 @@ impl Actor for AbciHost {
                         ),
                     ),
                 };
-                let txs_value = state.abci_client.request(a_req).await?.value;
+                let txs_value = state.abci_client.request_with_flush(a_req).await?.value;
                 let x = txs_value.unwrap();
 
                 let tx_array: Vec<bytes::Bytes> = match x {
                     tendermint_proto::v0_38::abci::response::Value::PrepareProposal(prep) => {
                         prep.txs
                     }
-                    tendermint_proto::v0_38::abci::response::Value::Flush(_) => {
-                        todo!("Should not return flush here")
-                    }
+
                     tendermint_proto::v0_38::abci::response::Value::Exception(exp) => {
                         todo!("Exception")
                     }
                     _ => {
-                        todo!("should nt0 happen;");
+                        todo!("should not happen;");
                     }
                 };
 
@@ -200,6 +236,7 @@ impl Actor for AbciHost {
 
                 let txes = tx_array.into_iter().map(Transaction::new).collect();
 
+                // ***** END PREPARE PROPOSAL
                 let (block_hash, parts) =
                     build_proposal_parts(height, round, &self.params, txes).await?;
 
@@ -300,28 +337,39 @@ impl Actor for AbciHost {
             } => {
                 let all_parts = state.part_store.all_parts(height, round);
 
+                let next_validators_hash = Bytes::from(
+                    self.params.initial_validator_set.get_keys()[0] // Todo: which validator are you looking from exactly?
+                        .as_bytes()
+                        .to_vec(),
+                );
+                let proposer_address =
+                    Bytes::from(state.proposer.clone().unwrap().as_bytes().to_vec());
                 // TODO: Build the block from proposal parts and commits and store it
 
                 // Update metrics
                 let block_size: usize = all_parts.iter().map(|p| p.size_bytes()).sum();
-                let tx_count: usize = all_parts.iter().map(|p| p.tx_count()).sum();
+                let tx_count: usize = all_parts
+                    .iter()
+                    .map(|p: &Arc<ProposalPart>| p.tx_count())
+                    .sum();
 
                 self.metrics.block_tx_count.observe(tx_count as f64);
                 self.metrics.block_size_bytes.observe(block_size as f64);
                 self.metrics.finalized_txes.inc_by(tx_count as u64);
 
-                // Prune the PartStore of all parts for heights lower than `state.height`
+                let tx_bytes = get_tx_bytes(all_parts);
 
+                // ***** PROCESS PROPOSAL
                 // Notify ABCI App of the decision
                 let process_proposal = RequestProcessProposal {
-                    txs: Vec::new(),
+                    txs: tx_bytes.clone(),
                     height: height.as_u64() as i64,
-                    proposed_last_commit: None,
-                    misbehavior: Vec::new(),
+                    proposed_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
+                    misbehavior: Vec::new(), // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
                     hash: Bytes::new(),
                     time: None,
-                    next_validators_hash: Bytes::new(),
-                    proposer_address: Bytes::new(),
+                    next_validators_hash: next_validators_hash.clone(),
+                    proposer_address: proposer_address.clone(),
                 };
                 let a_req = Request {
                     value: Some(
@@ -330,21 +378,95 @@ impl Actor for AbciHost {
                         ),
                     ),
                 };
-                let response_process_proposal =
-                    state.abci_client.request(a_req).await?.value.unwrap();
+                let response_process_proposal = state
+                    .abci_client
+                    .request_with_flush(a_req)
+                    .await?
+                    .value
+                    .unwrap(); // Causing panic if empty?
 
                 let status = match response_process_proposal {
                     tendermint_proto::v0_38::abci::response::Value::ProcessProposal(proc) => {
                         proc.status
                     }
+
                     _ => {
                         panic!("{:?}", response_process_proposal);
                     }
                 };
-                // TODO FINALIZE BLOCK AND COMMIT
-                info!("Proposal has been accepted if status is 1: {status}");
-                // TODO Call Finalize BLock , get the retain height and cal this from DECIDE
 
+                info!("Proposal has been accepted if status is 1: {status}");
+
+                // *** END PROCESS PROPOSAL
+
+                // *** FINALIZE BLOCK
+                let finalize_block_req = RequestFinalizeBlock {
+                    txs: tx_bytes,
+                    decided_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
+                    misbehavior: Vec::new(), // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
+                    hash: Bytes::from(block_hash.as_bytes().to_vec()),
+                    height: height.as_u64() as i64,
+                    time: None,
+                    next_validators_hash,
+                    proposer_address,
+                };
+
+                let a_req = Request {
+                    value: Some(
+                        tendermint_proto::v0_38::abci::request::Value::FinalizeBlock(
+                            finalize_block_req,
+                        ),
+                    ),
+                };
+
+                let response_finalize_block = state
+                    .abci_client
+                    .request_with_flush(a_req)
+                    .await?
+                    .value
+                    .unwrap(); // Causing panic if empty?
+
+                let resp = match response_finalize_block {
+                    tendermint_proto::v0_38::abci::response::Value::FinalizeBlock(resp) => resp,
+                    _ => {
+                        panic!("{:?}", response_finalize_block);
+                    }
+                };
+
+                // Here is where the finalize block events are received. For consensus the important part is the app_hash
+                let app_hash = process_finalize_block_response(resp);
+
+                // **** END FINALIZE BLOCK
+
+                // **** COMMIT
+                let commit_request = abci::RequestCommit {};
+                let a_req = Request {
+                    value: Some(tendermint_proto::v0_38::abci::request::Value::Commit(
+                        commit_request,
+                    )),
+                };
+
+                let response_commit = state
+                    .abci_client
+                    .request_with_flush(a_req)
+                    .await?
+                    .value
+                    .unwrap();
+
+                let retain_height = match response_commit {
+                    tendermint_proto::v0_38::abci::response::Value::Commit(retain_height) => {
+                        retain_height
+                    }
+                    _ => {
+                        panic!("{:?}", response_commit);
+                    }
+                };
+
+                // TODO Prune block and state store based on the retain height returned here
+
+                // **** END COMMIT
+
+                // Prune the PartStore of all parts for heights lower than `state.height`
                 state.part_store.prune(state.height); // This is cleaning only internal actor state
 
                 // Start the next height

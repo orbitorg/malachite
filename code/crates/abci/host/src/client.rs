@@ -42,7 +42,9 @@ impl AbciClient {
             )),
         };
         self.write.send(req).await?;
-        self.read.next().await.ok_or("no response")?
+        let resp = self.read.next().await.ok_or("no response")?;
+        self.read.next().await;
+        return resp;
     }
 }
 
