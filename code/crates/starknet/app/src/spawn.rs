@@ -10,7 +10,7 @@ use malachite_actors::gossip_mempool::{GossipMempool, GossipMempoolRef};
 use malachite_actors::host::HostRef;
 use malachite_actors::node::{Node, NodeRef};
 use malachite_common::Round;
-use malachite_gossip_consensus::{Config as GossipConsensusConfig, Keypair};
+use malachite_gossip_consensus::{Config as GossipConsensusConfig, DiscoveryConfig, Keypair};
 use malachite_gossip_mempool::Config as GossipMempoolConfig;
 use malachite_metrics::Metrics;
 use malachite_metrics::SharedRegistry;
@@ -55,7 +55,7 @@ pub async fn spawn_node_actor(
     )
     .await;
 
-    let start_height = Height::new(1);
+    let start_height = Height::new(1, 1);
 
     // Spawn consensus
     let consensus = spawn_consensus_actor(
@@ -127,6 +127,10 @@ async fn spawn_gossip_consensus_actor(
     let config_gossip = GossipConsensusConfig {
         listen_addr: cfg.consensus.p2p.listen_addr.clone(),
         persistent_peers: cfg.consensus.p2p.persistent_peers.clone(),
+        discovery: DiscoveryConfig {
+            enabled: cfg.consensus.p2p.discovery.enabled,
+            ..Default::default()
+        },
         idle_connection_timeout: Duration::from_secs(60),
         transport: match cfg.consensus.p2p.transport {
             TransportProtocol::Tcp => malachite_gossip_consensus::TransportProtocol::Tcp,
@@ -198,6 +202,7 @@ async fn spawn_host_actor(
         txs_per_part: cfg.test.txs_per_part,
         time_allowance_factor: cfg.test.time_allowance_factor,
         exec_time_per_tx: cfg.test.exec_time_per_tx,
+        vote_extensions: cfg.test.vote_extensions,
     };
 
     let mock_host = MockHost::new(

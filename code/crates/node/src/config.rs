@@ -73,17 +73,29 @@ pub struct Config {
 /// P2P configuration options
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct P2pConfig {
-    // Address to listen for incoming connections
+    /// Address to listen for incoming connections
     pub listen_addr: Multiaddr,
 
     /// List of nodes to keep persistent connections to
     pub persistent_peers: Vec<Multiaddr>,
+
+    /// Peer discovery
+    #[serde(default)]
+    pub discovery: DiscoveryConfig,
 
     /// Transport protocol to use
     pub transport: TransportProtocol,
 
     /// The type of pub-sub protocol to use for consensus
     pub protocol: PubSubProtocol,
+}
+
+/// Peer Discovery configuration options
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct DiscoveryConfig {
+    /// Enable peer discovery
+    #[serde(default)]
+    pub enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -254,6 +266,12 @@ impl RuntimeConfig {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct VoteExtensionsConfig {
+    pub enabled: bool,
+    pub size: ByteSize,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TestConfig {
     pub tx_size: ByteSize,
@@ -261,6 +279,8 @@ pub struct TestConfig {
     pub time_allowance_factor: f32,
     #[serde(with = "humantime_serde")]
     pub exec_time_per_tx: Duration,
+    #[serde(default)]
+    pub vote_extensions: VoteExtensionsConfig,
 }
 
 impl Default for TestConfig {
@@ -270,6 +290,7 @@ impl Default for TestConfig {
             txs_per_part: 256,
             time_allowance_factor: 0.5,
             exec_time_per_tx: Duration::from_millis(1),
+            vote_extensions: VoteExtensionsConfig::default(),
         }
     }
 }

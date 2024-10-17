@@ -38,10 +38,11 @@ where
     }
 
     info!(
-        consensus.height = %consensus_height,
-        proposal.height = %proposal_height,
-        proposer = %proposer_address,
-        "Received proposal: {}", PrettyProposal::<Ctx>(&signed_proposal.message)
+        height = %consensus_height,
+        %proposal_height,
+        address = %proposer_address,
+        message = %PrettyProposal::<Ctx>(&signed_proposal.message),
+        "Received proposal"
     );
 
     // Queue messages if driver is not initialized, or if they are for higher height.
@@ -127,7 +128,7 @@ where
         return Ok(false);
     };
 
-    let expected_proposer = state.get_proposer(proposal_height, proposal_round).unwrap(); // FIXME: Unwrap
+    let expected_proposer = state.get_proposer(proposal_height, proposal_round);
 
     if expected_proposer != proposer_address {
         warn!(

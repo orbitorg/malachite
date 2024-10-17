@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
-use malachite_common::{Context, NilOrVal, Round, Timeout, TimeoutStep, ValidatorSet, VoteType};
+use malachite_common::{Context, Extension, Round, Timeout, TimeoutStep, ValidatorSet};
 use malachite_consensus::{Effect, Resume};
 use malachite_metrics::Metrics;
 use malachite_node::config::TimeoutConfig;
@@ -52,9 +52,9 @@ pub enum Msg<Ctx: Context> {
     TimeoutElapsed(TimeoutElapsed<Timeout>),
 
     /// The proposal builder has built a value and can be used in a new proposal consensus message
-    ProposeValue(Ctx::Height, Round, Ctx::Value),
+    ProposeValue(Ctx::Height, Round, Ctx::Value, Extension),
 
-    /// Received and sssembled the full value proposed by a validator
+    /// Received and assembled the full value proposed by a validator
     ReceivedProposedValue(ProposedValue<Ctx>),
 }
 
@@ -204,12 +204,12 @@ where
                 Ok(())
             }
 
-            Msg::ProposeValue(height, round, value) => {
+            Msg::ProposeValue(height, round, value, extension) => {
                 let result = self
                     .process_input(
                         &myself,
                         state,
-                        ConsensusInput::ProposeValue(height, round, value),
+                        ConsensusInput::ProposeValue(height, round, value, extension),
                     )
                     .await;
 
@@ -222,8 +222,8 @@ where
 
             Msg::GossipEvent(event) => {
                 match event {
-                    GossipEvent::Listening(addr) => {
-                        info!("Listening on {addr}");
+                    GossipEvent::Listening(address) => {
+                        info!(%address, "Listening");
                         Ok(())
                     }
 
@@ -233,9 +233,9 @@ where
                             return Ok(());
                         }
 
-                        info!("Connected to peer {peer_id}");
+                        info!(%peer_id, "Connected to peer");
 
-                        let validator_set = &state.consensus.driver.validator_set;
+                        let validator_set = state.consensus.driver.validator_set();
                         let connected_peers = state.connected_peers.len();
                         let total_peers = validator_set.count() - 1;
 
@@ -243,8 +243,9 @@ where
 
                         self.metrics.connected_peers.inc();
 
+                        // TODO: change logic
                         if connected_peers == total_peers {
-                            info!("Enough peers ({connected_peers}) connected to start consensus");
+                            info!(count = %connected_peers, "Enough peers connected to start consensus");
 
                             let height = state.consensus.driver.height();
 
@@ -265,7 +266,7 @@ where
                     }
 
                     GossipEvent::PeerDisconnected(peer_id) => {
-                        info!("Disconnected from peer {peer_id}");
+                        info!(%peer_id, "Disconnected from peer");
 
                         if state.connected_peers.remove(&peer_id) {
                             self.metrics.connected_peers.dec();
@@ -330,51 +331,7 @@ where
                 if matches!(timeout.step, TimeoutStep::Prevote | TimeoutStep::Precommit) {
                     warn!(step = ?timeout.step, "Timeout elapsed");
 
-                    if let Some(per_round) = state
-                        .consensus
-                        .driver
-                        .vote_keeper
-                        .per_round()
-                        .get(&state.consensus.driver.round())
-                    {
-                        warn!(
-                            "Number of validators having voted: {} / {}",
-                            per_round.addresses_weights().get_inner().len(),
-                            state.consensus.driver.validator_set.count()
-                        );
-                        warn!(
-                            "Total voting power of validators: {}",
-                            state.consensus.driver.validator_set.total_voting_power()
-                        );
-                        warn!(
-                            "Voting power required: {}",
-                            state.consensus.driver.validator_set.total_voting_power() * 2 / 3
-                        );
-                        warn!(
-                            "Total voting power of validators having voted: {}",
-                            per_round.addresses_weights().sum()
-                        );
-                        warn!(
-                            "Total voting power of validators having prevoted nil: {}",
-                            per_round
-                                .votes()
-                                .get_weight(VoteType::Prevote, &NilOrVal::Nil)
-                        );
-                        warn!(
-                            "Total voting power of validators having precommited nil: {}",
-                            per_round
-                                .votes()
-                                .get_weight(VoteType::Precommit, &NilOrVal::Nil)
-                        );
-                        warn!(
-                            "Total weight of prevotes: {}",
-                            per_round.votes().weight_sum(VoteType::Prevote)
-                        );
-                        warn!(
-                            "Total weight of precommits: {}",
-                            per_round.votes().weight_sum(VoteType::Precommit)
-                        );
-                    }
+                    state.consensus.print_state();
                 }
 
                 let result = self
@@ -422,7 +379,12 @@ where
             },
             myself,
             |proposed: LocallyProposedValue<Ctx>| {
-                Msg::<Ctx>::ProposeValue(proposed.height, proposed.round, proposed.value)
+                Msg::<Ctx>::ProposeValue(
+                    proposed.height,
+                    proposed.round,
+                    proposed.value,
+                    proposed.extension,
+                )
             },
             None,
         )?;
