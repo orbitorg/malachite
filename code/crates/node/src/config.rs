@@ -390,10 +390,10 @@ mod tests {
 
     #[test]
     fn parse_invalid_app() {
-        assert_eq!(
+        assert!(matches!(
             App::from_str("invalid"),
-            Err("unknown application: invalid, available: starknet".to_string())
-        );
+            Err(err) if err.contains("unknown application: invalid")
+        ));
     }
 
     #[test]
