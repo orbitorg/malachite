@@ -2,7 +2,7 @@ use malachite_abci_p2p_types::{
     Address, BlockHash, Height, PartType, Proposal, ProposalPart, PublicKey, Validator,
     ValidatorSet, Vote,
 };
-use malachite_common::{self as common, NilOrVal, Round, VoteType, VotingPower};
+use malachite_common::{self as common, Extension, NilOrVal, Round, VoteType, VotingPower};
 
 use crate::context::AbciContext;
 
@@ -65,6 +65,14 @@ impl common::Vote<AbciContext> for Vote {
 
     fn validator_address(&self) -> &Address {
         &self.voter
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        None
+    }
+
+    fn extend(self, _extension: Extension) -> Self {
+        self
     }
 }
 

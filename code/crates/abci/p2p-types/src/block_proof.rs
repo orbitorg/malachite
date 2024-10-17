@@ -1,13 +1,14 @@
-use malachite_proto as proto;
+use bytes::Bytes;
 use malachite_abci_p2p_proto as p2p_proto;
+use malachite_proto as proto;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BlockProof {
-    pub bytes: Vec<Vec<u8>>,
+    pub bytes: Vec<Bytes>,
 }
 
 impl BlockProof {
-    pub fn new(bytes: Vec<Vec<u8>>) -> Self {
+    pub fn new(bytes: Vec<Bytes>) -> Self {
         Self { bytes }
     }
 }

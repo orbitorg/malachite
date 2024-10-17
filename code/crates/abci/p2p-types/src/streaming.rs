@@ -1,5 +1,7 @@
-use malachite_proto::Protobuf;
+use bytes::Bytes;
+
 use malachite_abci_p2p_proto as p2p_proto;
+use malachite_proto::Protobuf;
 
 pub struct StreamMessage {
     /// Receivers identify streams by (sender, stream_id).
@@ -16,7 +18,7 @@ pub struct StreamMessage {
 
 pub enum StreamContent {
     /// Serialized content.
-    Data(Vec<u8>),
+    Data(Bytes),
     /// Fin must be set to true.
     Fin(bool),
 }

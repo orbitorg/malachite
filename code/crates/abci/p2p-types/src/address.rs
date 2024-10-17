@@ -67,7 +67,7 @@ impl Protobuf for Address {
 
     fn to_proto(&self) -> Result<Self::Proto, ProtoError> {
         Ok(p2p_proto::Address {
-            elements: self.0.as_bytes().to_vec(),
+            elements: self.to_bytes(),
         })
     }
 }

@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use bytesize::ByteSize;
 use rand::RngCore;
 use sha3::Digest;
@@ -81,7 +82,7 @@ pub async fn build_proposal_parts(
         let mut proof = Vec::with_capacity(32);
         rng.fill_bytes(&mut proof);
 
-        let part = ProposalPart::BlockProof(BlockProof::new(vec![proof]));
+        let part = ProposalPart::BlockProof(BlockProof::new(vec![Bytes::from(proof)]));
 
         block_hasher.update(part.to_sign_bytes());
         parts.push(part);

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use malachite_common::{Context, NilOrVal, Round, SignedProposal, SignedProposalPart, SignedVote};
 use malachite_abci_p2p_types::{PrivateKey, PublicKey, Signature, SigningScheme};
+use malachite_common::{
+    Context, NilOrVal, Round, SignedProposal, SignedProposalPart, SignedVote, ValidatorSet as _,
+};
 use starknet_core::utils::starknet_keccak;
 
 use crate::types::{
@@ -31,6 +33,27 @@ impl Context for AbciContext {
     type Value = BlockHash;
     type Vote = Vote;
     type SigningScheme = SigningScheme;
+
+    fn select_proposer<'a>(
+        &self,
+        validator_set: &'a ValidatorSet,
+        height: Self::Height,
+        round: Round,
+    ) -> &'a Validator {
+        assert!(validator_set.count() > 0);
+        assert!(round != Round::Nil && round.as_i64() >= 0);
+
+        let proposer_index = {
+            let height = height.as_u64() as usize;
+            let round = round.as_i64() as usize;
+
+            (height - 1 + round) % validator_set.count()
+        };
+
+        validator_set
+            .get_by_index(proposer_index)
+            .expect("proposer_index is valid")
+    }
 
     fn sign_vote(&self, vote: Self::Vote) -> SignedVote<Self> {
         let hash = starknet_keccak(&vote.to_sign_bytes());

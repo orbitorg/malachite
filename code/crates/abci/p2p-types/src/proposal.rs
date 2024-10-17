@@ -1,6 +1,7 @@
+use bytes::Bytes;
+use malachite_abci_p2p_proto as p2p_proto;
 use malachite_common::Round;
 use malachite_proto as proto;
-use malachite_abci_p2p_proto as p2p_proto;
 
 use crate::{Address, BlockHash, Height};
 
@@ -31,7 +32,7 @@ impl Proposal {
         }
     }
 
-    pub fn to_sign_bytes(&self) -> Vec<u8> {
+    pub fn to_sign_bytes(&self) -> Bytes {
         proto::Protobuf::to_bytes(self).unwrap()
     }
 }

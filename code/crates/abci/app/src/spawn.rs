@@ -12,7 +12,7 @@ use malachite_actors::gossip_consensus::{GossipConsensus, GossipConsensusRef};
 use malachite_actors::host::HostRef;
 use malachite_actors::node::{Node, NodeRef};
 use malachite_common::Round;
-use malachite_gossip_consensus::{Config as GossipConsensusConfig, Keypair};
+use malachite_gossip_consensus::{Config as GossipConsensusConfig, DiscoveryConfig, Keypair};
 use malachite_metrics::Metrics;
 use malachite_metrics::SharedRegistry;
 use malachite_node::config::{Config as NodeConfig, PubSubProtocol, TransportProtocol};
@@ -126,6 +126,7 @@ async fn spawn_gossip_consensus_actor(
             PubSubProtocol::GossipSub => malachite_gossip_consensus::PubSubProtocol::GossipSub,
             PubSubProtocol::Broadcast => malachite_gossip_consensus::PubSubProtocol::Broadcast,
         },
+        discovery: DiscoveryConfig::default(),
     };
 
     let keypair = make_keypair(private_key);

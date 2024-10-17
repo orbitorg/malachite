@@ -61,14 +61,12 @@ impl proto::Protobuf for Transaction {
     type Proto = p2p_proto::Transaction;
 
     fn from_proto(proto: Self::Proto) -> Result<Self, proto::Error> {
-        let bytes = Bytes::from(proto.bytes);
-
         let hash = proto
             .hash
             .ok_or_else(|| proto::Error::missing_field::<Self::Proto>("hash"))?;
 
         Ok(Self {
-            data: bytes,
+            data: proto.bytes,
             hash: Hash::from_proto(hash)?,
         })
     }
@@ -76,7 +74,7 @@ impl proto::Protobuf for Transaction {
     fn to_proto(&self) -> Result<Self::Proto, proto::Error> {
         Ok(Self::Proto {
             hash: Some(self.hash.to_proto()?),
-            bytes: self.data.to_vec(),
+            bytes: self.data.clone(),
         })
     }
 }

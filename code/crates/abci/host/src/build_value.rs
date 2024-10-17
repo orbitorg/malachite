@@ -12,18 +12,16 @@ use sha3::Digest;
 use tokio::time::Instant;
 use tracing::{debug, error, trace};
 
-use malachite_abci_p2p_types::Transaction;
 use malachite_actors::consensus::ConsensusMsg;
 use malachite_actors::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef};
 use malachite_actors::host::{LocallyProposedValue, ProposedValue};
 use malachite_actors::util::streaming::{StreamContent, StreamId, StreamMessage};
-use malachite_common::{Round, Validity};
+use malachite_common::{Extension, Round, Validity};
 use malachite_metrics::Metrics;
 
 use crate::actor::HostState;
 use crate::build_proposal::build_proposal_parts;
 use crate::context::AbciContext;
-// use crate::mempool::{MempoolMsg, MempoolRef};
 use crate::part_store::PartStore;
 use crate::streaming::PartStreamsMap;
 use crate::types::{Address, BlockHash, Height, Proposal, ProposalPart, ValidatorSet};
@@ -43,6 +41,7 @@ pub fn build_value_from_parts(
         round,
         value,
         validity,
+        extension: Extension::default(),
     })
 }
 

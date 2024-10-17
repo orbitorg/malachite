@@ -1,5 +1,7 @@
-use malachite_proto::Error;
+use bytes::Bytes;
+
 use malachite_abci_p2p_proto::Felt252;
+use malachite_proto::Error;
 
 pub type Felt = starknet_crypto::Felt;
 
@@ -17,7 +19,7 @@ impl FeltExt for Felt {
 
     fn to_proto(&self) -> Result<Felt252, Error> {
         Ok(Felt252 {
-            elements: self.to_bytes_be().to_vec(),
+            elements: Bytes::copy_from_slice(self.to_bytes_be().as_ref()),
         })
     }
 }

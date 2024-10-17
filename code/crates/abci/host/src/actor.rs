@@ -17,7 +17,7 @@ use malachite_actors::consensus::ConsensusMsg;
 use malachite_actors::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef};
 use malachite_actors::host::LocallyProposedValue;
 use malachite_actors::util::streaming::{StreamContent, StreamId, StreamMessage};
-use malachite_common::Round;
+use malachite_common::{Extension, Round};
 use malachite_metrics::Metrics;
 
 use crate::build_proposal::build_proposal_parts;
@@ -266,6 +266,7 @@ impl Actor for AbciHost {
                         value.height,
                         value.round,
                         value.value,
+                        Extension::default(),
                     ))?;
                 }
 
