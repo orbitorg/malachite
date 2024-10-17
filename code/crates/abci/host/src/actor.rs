@@ -1,46 +1,33 @@
-#![allow(unused_variables, unused_imports)]
-
-use std::ops::Deref;
-use std::ptr::null;
+use std::str;
 use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use bytesize::ByteSize;
 use eyre::eyre;
-use prost::Message;
 use ractor::{async_trait, Actor, ActorProcessingErr, SpawnErr};
-use sha3::Digest;
-use tendermint::v0_38::abci::request::PrepareProposal;
-use tendermint::v0_38::abci::response::PrepareProposal as prep_response;
-use tendermint::{proposal, tx, TendermintKey, Time};
-
-use tendermint_proto::abci::{RequestFinalizeBlock, RequestProcessProposal, ResponseFinalizeBlock};
-use tendermint_proto::v0_38::abci::{
-    self, Request, RequestPrepareProposal, ResponsePrepareProposal,
-};
+use tendermint::Hash;
 use tokio::time::Instant;
-use tokio_util::codec::Encoder;
 use tracing::{debug, error, info, trace};
 
-use malachite_abci_p2p_types::Transaction;
+use tendermint_proto::v0_38::abci;
+
+use malachite_abci_p2p_types as p2p;
 use malachite_actors::consensus::ConsensusMsg;
 use malachite_actors::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef};
-use malachite_actors::host::{LocallyProposedValue, ProposedValue};
+use malachite_actors::host::LocallyProposedValue;
 use malachite_actors::util::streaming::{StreamContent, StreamId, StreamMessage};
-use malachite_common::{Round, Validity};
+use malachite_common::Round;
 use malachite_metrics::Metrics;
 
 use crate::build_proposal::build_proposal_parts;
 use crate::build_value::{build_value_from_part, build_value_from_parts};
-use crate::client::{AbciClient, Encode};
+use crate::client::AbciClient;
 use crate::context::AbciContext;
 use crate::part_store::PartStore;
 use crate::streaming::PartStreamsMap;
-use crate::types::{Address, BlockHash, Height, Proposal, ProposalPart, ValidatorSet};
-use malachite_gossip_mempool::BoxError;
-use std::str;
-use std::time;
+use crate::types::{Address, Height, ProposalPart, ValidatorSet};
+
 pub struct HostParams {
     pub address: Address,
     pub initial_validator_set: ValidatorSet,
@@ -96,32 +83,23 @@ impl AbciHost {
 }
 
 fn get_tx_bytes(all_parts: Vec<Arc<ProposalPart>>) -> Vec<Bytes> {
-    let transactions: Vec<_> = all_parts
+    all_parts
         .iter()
-        .map(|p| p.as_transactions().clone())
-        .into_iter()
-        .collect();
-
-    let all_transactions: Vec<malachite_abci_p2p_types::Transaction> = transactions
-        .iter()
-        .flatten()
-        .cloned()
-        .map(|x| x.clone().into_vec())
-        .flatten()
-        .collect();
-
-    let tx_bytes: Vec<Bytes> = all_transactions
-        .into_iter()
-        .map(|x: malachite_abci_p2p_types::Transaction| Bytes::from(x.as_bytes().to_vec()))
-        .collect();
-    return tx_bytes;
+        .flat_map(|p| p.as_transactions())
+        .flat_map(|x| x.to_vec())
+        .map(|x| Bytes::from(x.to_bytes()))
+        .collect()
 }
 
-fn process_finalize_block_response(response: ResponseFinalizeBlock) -> Bytes {
-    // TODO Here is the processing and storing of events, tx responses etc.
+fn process_finalize_block_response(response: abci::ResponseFinalizeBlock) -> Hash {
+    // TODO: Here is the processing and storing of events, tx responses etc.
     // The number of returned tx_results is in Comet matched against the number of transactions
     // in the proposal and this throws an error if it does not match.
-    return response.app_hash;
+    Hash::from_bytes(
+        tendermint::hash::Algorithm::Sha256,
+        response.app_hash.as_ref(),
+    )
+    .unwrap()
 }
 
 #[async_trait]
@@ -133,10 +111,13 @@ impl Actor for AbciHost {
     async fn pre_start(
         &self,
         _myself: HostRef,
-        args: (),
+        _args: (),
     ) -> Result<Self::State, ActorProcessingErr> {
-        let kvstore_socket = std::env::var("KVSTORE_SOCKET").unwrap();
-        print!("{}", kvstore_socket);
+        let Ok(kvstore_socket) = std::env::var("KVSTORE_SOCKET") else {
+            return Err(eyre!("KVSTORE_SOCKET environment variable not set").into());
+        };
+
+        info!("KV Store Socket: {kvstore_socket}");
 
         // INIT CHAIN
 
@@ -178,11 +159,12 @@ impl Actor for AbciHost {
                 height,
                 round,
                 timeout_duration,
-                address,
+                address: _,
                 reply_to,
             } => {
-                let deadline = Instant::now() + timeout_duration;
                 debug!(%height, %round, "Building new proposal...");
+
+                let _deadline = Instant::now() + timeout_duration;
 
                 let next_validators_hash = Bytes::from(
                     self.params.initial_validator_set.get_keys()[0] // Todo: which validator are you looking from exactly?
@@ -193,7 +175,8 @@ impl Actor for AbciHost {
                 // **** PREPARE PROPOSAL
                 let proposer_address =
                     Bytes::from(state.proposer.clone().unwrap().as_bytes().to_vec());
-                let prep_proposal = RequestPrepareProposal {
+
+                let prepare_proposal = abci::RequestPrepareProposal {
                     max_tx_bytes: 10,
                     txs: Vec::new(),
                     height: height.as_u64() as i64,
@@ -203,42 +186,52 @@ impl Actor for AbciHost {
                     next_validators_hash,
                     proposer_address,
                 };
-                let a_req = Request {
-                    value: Some(
-                        tendermint_proto::v0_38::abci::request::Value::PrepareProposal(
-                            prep_proposal,
-                        ),
-                    ),
+
+                let abci_request = abci::Request {
+                    value: Some(abci::request::Value::PrepareProposal(prepare_proposal)),
                 };
-                let txs_value = state.abci_client.request_with_flush(a_req).await?.value;
-                let x = txs_value.unwrap();
 
-                let tx_array: Vec<bytes::Bytes> = match x {
-                    tendermint_proto::v0_38::abci::response::Value::PrepareProposal(prep) => {
-                        prep.txs
+                let response = state
+                    .abci_client
+                    .request_with_flush(abci_request)
+                    .await?
+                    .value;
+
+                let txes: Vec<_> = match response {
+                    Some(abci::response::Value::PrepareProposal(prep)) => prep.txs,
+
+                    Some(abci::response::Value::Exception(e)) => {
+                        error!("ABCI app raised an exception: {e:?}");
+                        return Ok(());
                     }
 
-                    tendermint_proto::v0_38::abci::response::Value::Exception(exp) => {
-                        todo!("Exception")
+                    Some(other) => {
+                        error!("Received unexpected response from ABCI app: {other:?}");
+                        return Ok(());
                     }
-                    _ => {
-                        todo!("should not happen;");
+
+                    None => {
+                        error!("No response from ABCI app");
+                        return Ok(());
                     }
                 };
 
                 // This should be removed, just for debugging purposes, prints the transactions
-                print!("\nTransactions retrieved");
-                for tx in &tx_array {
-                    let tx_vec = tx.to_vec();
-                    let tx_string = str::from_utf8(&tx_vec).unwrap();
-                    print!("\n{}", tx_string);
+                info!("Transactions retrieved:");
+
+                for tx in &txes {
+                    let tx_string = str::from_utf8(tx.as_ref()).unwrap();
+                    info!(" - {}", tx_string);
                 }
 
-                let txes = tx_array.into_iter().map(Transaction::new).collect();
+                let txes = txes.into_iter().map(p2p::Transaction::new).collect();
 
                 // ***** END PREPARE PROPOSAL
+
                 let (block_hash, parts) =
                     build_proposal_parts(height, round, &self.params, txes).await?;
+
+                info!("Block Hash: {block_hash}");
 
                 let stream_id = state.next_stream_id;
                 state.next_stream_id += 1;
@@ -323,7 +316,10 @@ impl Actor for AbciHost {
                 Ok(())
             }
 
-            HostMsg::GetValidatorSet { height, reply_to } => {
+            HostMsg::GetValidatorSet {
+                height: _,
+                reply_to,
+            } => {
                 reply_to.send(self.params.initial_validator_set.clone())?;
                 Ok(())
             }
@@ -332,7 +328,7 @@ impl Actor for AbciHost {
                 height,
                 round,
                 value: block_hash,
-                commits,
+                commits: _,
                 consensus,
             } => {
                 let all_parts = state.part_store.all_parts(height, round);
@@ -342,8 +338,13 @@ impl Actor for AbciHost {
                         .as_bytes()
                         .to_vec(),
                 );
-                let proposer_address =
-                    Bytes::from(state.proposer.clone().unwrap().as_bytes().to_vec());
+
+                let proposer_address = state
+                    .proposer
+                    .as_ref()
+                    .map(|p| p.to_bytes())
+                    .unwrap_or_default();
+
                 // TODO: Build the block from proposal parts and commits and store it
 
                 // Update metrics
@@ -361,7 +362,7 @@ impl Actor for AbciHost {
 
                 // ***** PROCESS PROPOSAL
                 // Notify ABCI App of the decision
-                let process_proposal = RequestProcessProposal {
+                let process_proposal = abci::RequestProcessProposal {
                     txs: tx_bytes.clone(),
                     height: height.as_u64() as i64,
                     proposed_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
@@ -371,27 +372,23 @@ impl Actor for AbciHost {
                     next_validators_hash: next_validators_hash.clone(),
                     proposer_address: proposer_address.clone(),
                 };
-                let a_req = Request {
-                    value: Some(
-                        tendermint_proto::v0_38::abci::request::Value::ProcessProposal(
-                            process_proposal,
-                        ),
-                    ),
-                };
-                let response_process_proposal = state
-                    .abci_client
-                    .request_with_flush(a_req)
-                    .await?
-                    .value
-                    .unwrap(); // Causing panic if empty?
 
-                let status = match response_process_proposal {
-                    tendermint_proto::v0_38::abci::response::Value::ProcessProposal(proc) => {
-                        proc.status
+                let request = abci::Request {
+                    value: Some(abci::request::Value::ProcessProposal(process_proposal)),
+                };
+
+                let response = state.abci_client.request_with_flush(request).await?.value;
+                let status = match response {
+                    Some(abci::response::Value::ProcessProposal(proc)) => proc.status,
+
+                    Some(other) => {
+                        error!("Received unexpected response from ABCI app: {other:?}");
+                        return Ok(());
                     }
 
-                    _ => {
-                        panic!("{:?}", response_process_proposal);
+                    None => {
+                        error!("No response from ABCI app");
+                        return Ok(());
                     }
                 };
 
@@ -400,69 +397,61 @@ impl Actor for AbciHost {
                 // *** END PROCESS PROPOSAL
 
                 // *** FINALIZE BLOCK
-                let finalize_block_req = RequestFinalizeBlock {
+                let finalize_block = abci::RequestFinalizeBlock {
                     txs: tx_bytes,
                     decided_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
                     misbehavior: Vec::new(), // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
-                    hash: Bytes::from(block_hash.as_bytes().to_vec()),
+                    hash: block_hash.to_bytes(),
                     height: height.as_u64() as i64,
                     time: None,
                     next_validators_hash,
                     proposer_address,
                 };
 
-                let a_req = Request {
-                    value: Some(
-                        tendermint_proto::v0_38::abci::request::Value::FinalizeBlock(
-                            finalize_block_req,
-                        ),
-                    ),
+                let request = abci::Request {
+                    value: Some(abci::request::Value::FinalizeBlock(finalize_block)),
                 };
 
-                let response_finalize_block = state
-                    .abci_client
-                    .request_with_flush(a_req)
-                    .await?
-                    .value
-                    .unwrap(); // Causing panic if empty?
-
-                let resp = match response_finalize_block {
-                    tendermint_proto::v0_38::abci::response::Value::FinalizeBlock(resp) => resp,
-                    _ => {
-                        panic!("{:?}", response_finalize_block);
+                let response = state.abci_client.request_with_flush(request).await?.value;
+                let response = match response {
+                    Some(abci::response::Value::FinalizeBlock(resp)) => resp,
+                    other => {
+                        error!("Got an unexpected response from ABCI app: {other:?}");
+                        return Ok(());
                     }
                 };
 
                 // Here is where the finalize block events are received. For consensus the important part is the app_hash
-                let app_hash = process_finalize_block_response(resp);
+                let app_hash = process_finalize_block_response(response);
+                info!("App Hash: {app_hash}");
 
                 // **** END FINALIZE BLOCK
 
                 // **** COMMIT
-                let commit_request = abci::RequestCommit {};
-                let a_req = Request {
-                    value: Some(tendermint_proto::v0_38::abci::request::Value::Commit(
-                        commit_request,
-                    )),
+                let request_commit = abci::RequestCommit {};
+                let request = abci::Request {
+                    value: Some(abci::request::Value::Commit(request_commit)),
                 };
 
-                let response_commit = state
-                    .abci_client
-                    .request_with_flush(a_req)
-                    .await?
-                    .value
-                    .unwrap();
+                let response = state.abci_client.request_with_flush(request).await?.value;
 
-                let retain_height = match response_commit {
-                    tendermint_proto::v0_38::abci::response::Value::Commit(retain_height) => {
-                        retain_height
+                let retain_height = match response {
+                    Some(abci::response::Value::Commit(response)) => response.retain_height,
+
+                    Some(other) => {
+                        error!("Received unexpected response from ABCI app: {other:?}");
+                        return Ok(());
                     }
-                    _ => {
-                        panic!("{:?}", response_commit);
+
+                    None => {
+                        error!("No response from ABCI app");
+                        return Ok(());
                     }
                 };
 
-                // TODO Prune block and state store based on the retain height returned here
+                info!("Retain height: {retain_height}");
+
+                // TODO: Prune block and state store based on the retain height returned here
 
                 // **** END COMMIT
 

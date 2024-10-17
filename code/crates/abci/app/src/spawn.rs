@@ -31,10 +31,6 @@ pub async fn spawn_node_actor(
     let metrics = Metrics::register(registry);
     let address = Address::from_public_key(private_key.public_key());
 
-    // Spawn mempool and its gossip layer
-    // let gossip_mempool = spawn_gossip_mempool_actor(&cfg, &private_key, registry).await;
-    // let mempool = spawn_mempool_actor(gossip_mempool.clone(), &cfg.mempool, &cfg.test).await;
-
     // Spawn consensus gossip
     let gossip_consensus = spawn_gossip_consensus_actor(&cfg, &private_key, registry).await;
 
@@ -147,42 +143,10 @@ fn make_keypair(private_key: &PrivateKey) -> Keypair {
     Keypair::from(ecdsa_keypair)
 }
 
-// async fn spawn_mempool_actor(
-//     gossip_mempool: GossipMempoolRef,
-//     mempool_config: &MempoolConfig,
-//     test_config: &TestConfig,
-// ) -> MempoolRef {
-//     Mempool::spawn(gossip_mempool, mempool_config, test_config)
-//         .await
-//         .unwrap()
-// }
-
-// async fn spawn_gossip_mempool_actor(
-//     cfg: &NodeConfig,
-//     private_key: &PrivateKey,
-//     registry: &SharedRegistry,
-// ) -> GossipMempoolRef {
-//     let config_gossip_mempool = GossipMempoolConfig {
-//         listen_addr: cfg.mempool.p2p.listen_addr.clone(),
-//         persistent_peers: cfg.mempool.p2p.persistent_peers.clone(),
-//         idle_connection_timeout: Duration::from_secs(60),
-//         transport: match cfg.mempool.p2p.transport {
-//             TransportProtocol::Tcp => malachite_gossip_mempool::TransportProtocol::Tcp,
-//             TransportProtocol::Quic => malachite_gossip_mempool::TransportProtocol::Quic,
-//         },
-//     };
-//
-//     let keypair = make_keypair(private_key);
-//     GossipMempool::spawn(keypair, config_gossip_mempool, registry.clone())
-//         .await
-//         .unwrap()
-// }
-
 async fn spawn_host_actor(
     cfg: &NodeConfig,
     address: &Address,
     initial_validator_set: &ValidatorSet,
-    // mempool: MempoolRef,
     gossip_consensus: GossipConsensusRef<AbciContext>,
     metrics: Metrics,
 ) -> HostRef<AbciContext> {

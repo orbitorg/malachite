@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use core::fmt;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,11 @@ impl Address {
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_bytes(&self) -> [u8; 32] {
         self.0.as_bytes()
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn to_bytes(&self) -> Bytes {
+        Bytes::copy_from_slice(self.0.as_bytes().as_ref())
     }
 }
 

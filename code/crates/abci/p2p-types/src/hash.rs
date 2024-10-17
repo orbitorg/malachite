@@ -1,9 +1,10 @@
 use core::{fmt, str};
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 
-use malachite_proto as proto;
 use malachite_abci_p2p_proto as p2p_proto;
+use malachite_proto as proto;
 use starknet_core::types::Hash256;
 
 pub type MessageHash = Hash;
@@ -28,6 +29,10 @@ impl Hash {
 
     pub fn as_bytes(&self) -> &[u8; 32] {
         self.0.as_bytes()
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        Bytes::copy_from_slice(self.0.as_bytes().as_ref())
     }
 
     #[allow(clippy::len_without_is_empty)]

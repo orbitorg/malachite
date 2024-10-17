@@ -1,11 +1,11 @@
-use std::future::IntoFuture;
 use std::path::Path;
 
 use futures_util::{SinkExt, StreamExt};
-use tendermint_proto::v0_38::abci;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::UnixStream;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
+use tendermint_proto::v0_38::abci;
 
 pub struct AbciClient {
     read: FramedRead<OwnedReadHalf, Decode<tendermint_proto::v0_38::abci::Response>>,
@@ -28,7 +28,7 @@ impl AbciClient {
         self.read.next().await.ok_or("no response")?
     }
 
-    // The ABCI server expects flush to be acalled after every synchronous request.
+    // The ABCI server expects flush to be called after every synchronous request.
     // If the function above is used, the value won't be returned until Flush
     // is called at a later time
     pub async fn request_with_flush(
@@ -36,15 +36,21 @@ impl AbciClient {
         request: abci::Request,
     ) -> Result<abci::Response, BoxError> {
         self.write.send(request).await?;
-        let req = abci::Request {
-            value: Some(tendermint_proto::v0_38::abci::request::Value::Flush(
-                tendermint_proto::v0_38::abci::RequestFlush {},
-            )),
+
+        let request = abci::Request {
+            value: Some(abci::request::Value::Flush(abci::RequestFlush {})),
         };
-        self.write.send(req).await?;
-        let resp = self.read.next().await.ok_or("no response")?;
+
+        // Send request
+        self.write.send(request).await?;
+
+        // Read response
+        let response = self.read.next().await.ok_or("no response")?;
+
+        // Read and discard Flush response
         self.read.next().await;
-        return resp;
+
+        response
     }
 }
 

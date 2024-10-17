@@ -106,9 +106,14 @@ impl Transactions {
         self.0.is_empty()
     }
 
-    /// Get transactions from a batch
+    /// Get transactions from a batch, consumes self
     pub fn into_vec(self) -> Vec<Transaction> {
         self.0
+    }
+
+    /// Get transactions from a batch, clones them
+    pub fn to_vec(&self) -> Vec<Transaction> {
+        self.0.to_vec()
     }
 
     /// Get transactions from a batch

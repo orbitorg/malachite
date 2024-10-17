@@ -70,11 +70,15 @@ where
         // Set ourselves as the supervisor of the other actors
         self.gossip_consensus.link(myself.get_cell());
         self.consensus.link(myself.get_cell());
-        self.gossip_mempool
-            .as_ref()
-            .map(|r| r.link(myself.get_cell()));
-        self.mempool.as_ref().map(|r| r.link(myself.get_cell()));
         self.host.link(myself.get_cell());
+
+        if let Some(r) = self.gossip_mempool.as_ref() {
+            r.link(myself.get_cell())
+        }
+
+        if let Some(r) = self.mempool.as_ref() {
+            r.link(myself.get_cell())
+        }
 
         Ok(())
     }
