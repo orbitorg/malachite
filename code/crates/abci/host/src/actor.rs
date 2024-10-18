@@ -42,6 +42,12 @@ pub struct AbciHost {
     metrics: Metrics,
 }
 
+impl AbciHost {
+    pub fn next_validators_hash(&self) -> Bytes {
+        Bytes::copy_from_slice(hash_validator_set(&self.params.initial_validator_set).as_bytes())
+    }
+}
+
 pub struct HostState {
     pub height: Height,
     pub round: Round,
@@ -50,6 +56,15 @@ pub struct HostState {
     pub part_streams_map: PartStreamsMap,
     pub next_stream_id: StreamId,
     pub abci_client: AbciClient,
+}
+
+impl HostState {
+    pub fn proposer_address_bytes(&self) -> Bytes {
+        self.proposer
+            .as_ref()
+            .map(|p| p.to_bytes())
+            .unwrap_or_default()
+    }
 }
 
 pub type HostRef = malachite_actors::host::HostRef<AbciContext>;
@@ -211,16 +226,9 @@ impl Actor for AbciHost {
             } => {
                 debug!(%height, %round, "Building new proposal...");
 
-                let next_validators_hash = Bytes::copy_from_slice(
-                    hash_validator_set(&self.params.initial_validator_set).as_bytes(),
-                );
-
                 // **** PREPARE PROPOSAL
-                let proposer_address = state
-                    .proposer
-                    .as_ref()
-                    .map(|p| p.to_bytes())
-                    .unwrap_or_default();
+                let next_validators_hash = self.next_validators_hash();
+                let proposer_address = state.proposer_address_bytes();
 
                 let prepare_proposal = abci::RequestPrepareProposal {
                     max_tx_bytes: 10,
@@ -299,10 +307,30 @@ impl Actor for AbciHost {
                         "Processing proposal part"
                     );
 
-                    if let Some(value) =
+                    if let Some(mut proposed) =
                         build_value_from_part(state, parts.height, parts.round, part).await
                     {
-                        reply_to.send(value)?;
+                        let next_validators_hash = self.next_validators_hash();
+                        let proposer_address = state.proposer_address_bytes();
+
+                        let extension = AbciApp::extend_vote(
+                            &mut state.abci_client,
+                            abci::RequestExtendVote {
+                                hash: Bytes::copy_from_slice(proposed.value.as_bytes().as_ref()),
+                                height: parts.height.as_u64() as i64,
+                                time: None,
+                                txs: vec![],                // TODO: Fill this in
+                                proposed_last_commit: None, // TODO: This needs to be added in the data structures of the proposal
+                                misbehavior: Vec::new(), // TODO: This needs to be added in the data structures of the proposal
+                                next_validators_hash,
+                                proposer_address,
+                            },
+                        )
+                        .await?;
+
+                        proposed.extension = extension;
+
+                        reply_to.send(proposed)?;
                         break;
                     }
                 }
@@ -327,24 +355,14 @@ impl Actor for AbciHost {
             } => {
                 let all_parts = state.part_store.all_parts(height, round);
 
-                let next_validators_hash = Bytes::copy_from_slice(
-                    hash_validator_set(&self.params.initial_validator_set).as_bytes(),
-                );
-
-                let proposer_address = state
-                    .proposer
-                    .as_ref()
-                    .map(|p| p.to_bytes())
-                    .unwrap_or_default();
+                let next_validators_hash = self.next_validators_hash();
+                let proposer_address = state.proposer_address_bytes();
 
                 // TODO: Build the block from proposal parts and commits and store it
 
                 // Update metrics
                 let block_size: usize = all_parts.iter().map(|p| p.size_bytes()).sum();
-                let tx_count: usize = all_parts
-                    .iter()
-                    .map(|p: &Arc<ProposalPart>| p.tx_count())
-                    .sum();
+                let tx_count: usize = all_parts.iter().map(|p| p.tx_count()).sum();
 
                 self.metrics.block_tx_count.observe(tx_count as f64);
                 self.metrics.block_size_bytes.observe(block_size as f64);
@@ -359,7 +377,7 @@ impl Actor for AbciHost {
                     height: height.as_u64() as i64,
                     proposed_last_commit: None, // TODO: This needs to be added in the data structures of the proposal
                     misbehavior: Vec::new(), // TODO: This needs to be added in the data structures of the proposal
-                    hash: Bytes::new(),
+                    hash: Bytes::copy_from_slice(block_hash.as_bytes().as_ref()),
                     time: None,
                     next_validators_hash: next_validators_hash.clone(),
                     proposer_address: proposer_address.clone(),

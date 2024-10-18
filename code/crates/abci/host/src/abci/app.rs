@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use malachite_abci_p2p_types::Height;
+use malachite_common::Extension;
 use tendermint_proto::v0_38::abci;
 
 use super::AbciClient;
@@ -22,6 +23,28 @@ impl From<i32> for Status {
 pub struct AbciApp;
 
 impl AbciApp {
+    pub async fn extend_vote(
+        abci_client: &mut AbciClient,
+        request: abci::RequestExtendVote,
+    ) -> Result<Option<Extension>, eyre::Error> {
+        let abci_request = abci::Request {
+            value: Some(abci::request::Value::ExtendVote(request)),
+        };
+
+        let response = abci_client.request_with_flush(abci_request).await?.value;
+
+        match response {
+            Some(abci::response::Value::ExtendVote(response)) => {
+                Ok(Some(response.vote_extension.into()))
+            }
+            Some(abci::response::Value::Exception(e)) => {
+                eyre::bail!("ABCI app raised an exception: {e:?}")
+            }
+            Some(other) => eyre::bail!("Received unexpected response from ABCI app: {other:?}"),
+            None => Ok(None),
+        }
+    }
+
     pub async fn prepare_proposal(
         abci_client: &mut AbciClient,
         request: abci::RequestPrepareProposal,
