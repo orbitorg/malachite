@@ -41,7 +41,7 @@ pub fn build_value_from_parts(
         round,
         value,
         validity,
-        extension: Extension::default(),
+        extension: None,
     })
 }
 
