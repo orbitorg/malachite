@@ -2,10 +2,10 @@
 #![allow(unexpected_cfgs)]
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
+pub mod abci;
 pub mod actor;
 pub mod build_proposal;
 pub mod build_value;
-pub mod client;
 pub mod context;
 pub mod impls;
 pub mod part_store;

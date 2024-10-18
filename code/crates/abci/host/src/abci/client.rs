@@ -8,7 +8,7 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use tendermint_proto::v0_38::abci;
 
 pub struct AbciClient {
-    read: FramedRead<OwnedReadHalf, Decode<tendermint_proto::v0_38::abci::Response>>,
+    read: FramedRead<OwnedReadHalf, Decode<abci::Response>>,
     write: FramedWrite<OwnedWriteHalf, Encode<abci::Request>>,
 }
 
@@ -23,9 +23,9 @@ impl AbciClient {
         })
     }
 
-    pub async fn request(&mut self, request: abci::Request) -> Result<abci::Response, BoxError> {
+    pub async fn request(&mut self, request: abci::Request) -> Result<abci::Response, eyre::Error> {
         self.write.send(request).await?;
-        self.read.next().await.ok_or("no response")?
+        self.read.next().await.ok_or(eyre::eyre!("no response"))?
     }
 
     // The ABCI server expects flush to be called after every synchronous request.
@@ -34,7 +34,7 @@ impl AbciClient {
     pub async fn request_with_flush(
         &mut self,
         request: abci::Request,
-    ) -> Result<abci::Response, BoxError> {
+    ) -> Result<abci::Response, eyre::Error> {
         self.write.send(request).await?;
 
         let request = abci::Request {
@@ -45,7 +45,7 @@ impl AbciClient {
         self.write.send(request).await?;
 
         // Read response
-        let response = self.read.next().await.ok_or("no response")?;
+        let response = self.read.next().await.ok_or(eyre::eyre!("no response"))?;
 
         // Read and discard Flush response
         self.read.next().await;
@@ -80,11 +80,9 @@ enum DecodeState {
     Body { len: usize },
 }
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
 impl<M: prost::Message + Default> Decoder for Decode<M> {
     type Item = M;
-    type Error = BoxError;
+    type Error = eyre::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         match self.state {
@@ -149,7 +147,7 @@ impl<M> Default for Encode<M> {
 }
 
 impl<M: prost::Message + Sized + std::fmt::Debug> Encoder<M> for Encode<M> {
-    type Error = BoxError;
+    type Error = eyre::Error;
 
     fn encode(&mut self, item: M, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let mut buf = BytesMut::new();

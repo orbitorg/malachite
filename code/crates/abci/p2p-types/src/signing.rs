@@ -1,5 +1,6 @@
 use core::fmt;
 
+use bytes::Bytes;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use starknet_core::crypto::{ecdsa_sign, ecdsa_verify};
@@ -170,7 +171,7 @@ impl From<[u8; 32]> for PrivateKey {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PublicKey(Felt);
 
@@ -188,6 +189,11 @@ impl PublicKey {
     #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn as_bytes(&self) -> [u8; 32] {
         self.0.to_bytes_be()
+    }
+
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn to_bytes(self) -> Bytes {
+        Bytes::copy_from_slice(self.as_bytes().as_ref())
     }
 
     #[cfg_attr(coverage_nightly, coverage(off))]

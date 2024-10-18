@@ -6,9 +6,7 @@ use bytes::Bytes;
 use bytesize::ByteSize;
 use eyre::eyre;
 use ractor::{async_trait, Actor, ActorProcessingErr, SpawnErr};
-use tendermint::Hash;
-use tokio::time::Instant;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, info, trace};
 
 use tendermint_proto::v0_38::abci;
 
@@ -20,9 +18,9 @@ use malachite_actors::util::streaming::{StreamContent, StreamId, StreamMessage};
 use malachite_common::{Extension, Round};
 use malachite_metrics::Metrics;
 
+use crate::abci::{AbciApp, AbciClient};
 use crate::build_proposal::build_proposal_parts;
 use crate::build_value::{build_value_from_part, build_value_from_parts};
-use crate::client::AbciClient;
 use crate::context::AbciContext;
 use crate::part_store::PartStore;
 use crate::streaming::PartStreamsMap;
@@ -80,6 +78,54 @@ impl AbciHost {
 
         Ok(actor_ref)
     }
+
+    pub async fn broadcast_parts(
+        &self,
+        state: &mut HostState,
+        parts: Vec<ProposalPart>,
+        height: Height,
+        round: Round,
+    ) -> Result<Vec<Arc<ProposalPart>>, eyre::Error> {
+        let stream_id = state.next_stream_id;
+        state.next_stream_id += 1;
+
+        let mut sequence = 0;
+        for part in parts {
+            state.part_store.store(height, round, part.clone());
+
+            debug!(
+                %stream_id,
+                %sequence,
+                part_type = ?part.part_type(),
+                "Broadcasting proposal part"
+            );
+
+            let msg = StreamMessage::new(stream_id, sequence, StreamContent::Data(part));
+            sequence += 1;
+
+            self.gossip_consensus
+                .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
+        }
+
+        let msg = StreamMessage::new(stream_id, sequence, StreamContent::Fin(true));
+
+        self.gossip_consensus
+            .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
+
+        Ok(state.part_store.all_parts(height, round))
+    }
+}
+
+fn hash_validator_set(validator_set: &ValidatorSet) -> tendermint::Hash {
+    let validator_bytes: Vec<Bytes> = validator_set
+        .validators
+        .iter()
+        .map(|validator| validator.hash_bytes())
+        .collect();
+
+    tendermint::Hash::Sha256(tendermint::merkle::simple_hash_from_byte_vectors::<
+        sha2::Sha256,
+    >(&validator_bytes))
 }
 
 fn get_tx_bytes(all_parts: Vec<Arc<ProposalPart>>) -> Vec<Bytes> {
@@ -91,11 +137,11 @@ fn get_tx_bytes(all_parts: Vec<Arc<ProposalPart>>) -> Vec<Bytes> {
         .collect()
 }
 
-fn process_finalize_block_response(response: abci::ResponseFinalizeBlock) -> Hash {
+fn process_finalize_block_response(response: abci::ResponseFinalizeBlock) -> tendermint::Hash {
     // TODO: Here is the processing and storing of events, tx responses etc.
     // The number of returned tx_results is in Comet matched against the number of transactions
     // in the proposal and this throws an error if it does not match.
-    Hash::from_bytes(
+    tendermint::Hash::from_bytes(
         tendermint::hash::Algorithm::Sha256,
         response.app_hash.as_ref(),
     )
@@ -152,69 +198,43 @@ impl Actor for AbciHost {
                 state.height = height;
                 state.round = round;
                 state.proposer = Some(proposer);
+
                 Ok(())
             }
 
             HostMsg::GetValue {
                 height,
                 round,
-                timeout_duration,
+                timeout_duration: _,
                 address: _,
                 reply_to,
             } => {
                 debug!(%height, %round, "Building new proposal...");
 
-                let _deadline = Instant::now() + timeout_duration;
-
-                let next_validators_hash = Bytes::from(
-                    self.params.initial_validator_set.get_keys()[0] // Todo: which validator are you looking from exactly?
-                        .as_bytes()
-                        .to_vec(),
+                let next_validators_hash = Bytes::copy_from_slice(
+                    hash_validator_set(&self.params.initial_validator_set).as_bytes(),
                 );
 
                 // **** PREPARE PROPOSAL
-                let proposer_address =
-                    Bytes::from(state.proposer.clone().unwrap().as_bytes().to_vec());
+                let proposer_address = state
+                    .proposer
+                    .as_ref()
+                    .map(|p| p.to_bytes())
+                    .unwrap_or_default();
 
                 let prepare_proposal = abci::RequestPrepareProposal {
                     max_tx_bytes: 10,
                     txs: Vec::new(),
                     height: height.as_u64() as i64,
-                    local_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
-                    misbehavior: Vec::new(), // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
+                    local_last_commit: None, // TODO: This needs to be added in the data structures of the proposal
+                    misbehavior: Vec::new(), // TODO: This needs to be added in the data structures of the proposal
                     time: None,
                     next_validators_hash,
                     proposer_address,
                 };
 
-                let abci_request = abci::Request {
-                    value: Some(abci::request::Value::PrepareProposal(prepare_proposal)),
-                };
-
-                let response = state
-                    .abci_client
-                    .request_with_flush(abci_request)
-                    .await?
-                    .value;
-
-                let txes: Vec<_> = match response {
-                    Some(abci::response::Value::PrepareProposal(prep)) => prep.txs,
-
-                    Some(abci::response::Value::Exception(e)) => {
-                        error!("ABCI app raised an exception: {e:?}");
-                        return Ok(());
-                    }
-
-                    Some(other) => {
-                        error!("Received unexpected response from ABCI app: {other:?}");
-                        return Ok(());
-                    }
-
-                    None => {
-                        error!("No response from ABCI app");
-                        return Ok(());
-                    }
-                };
+                let txes =
+                    AbciApp::prepare_proposal(&mut state.abci_client, prepare_proposal).await?;
 
                 // This should be removed, just for debugging purposes, prints the transactions
                 info!("Transactions retrieved:");
@@ -230,36 +250,9 @@ impl Actor for AbciHost {
 
                 let (block_hash, parts) =
                     build_proposal_parts(height, round, &self.params, txes).await?;
-
                 info!("Block Hash: {block_hash}");
 
-                let stream_id = state.next_stream_id;
-                state.next_stream_id += 1;
-
-                let mut sequence = 0;
-                for part in parts {
-                    state.part_store.store(height, round, part.clone());
-
-                    debug!(
-                        %stream_id,
-                        %sequence,
-                        part_type = ?part.part_type(),
-                        "Broadcasting proposal part"
-                    );
-
-                    let msg = StreamMessage::new(stream_id, sequence, StreamContent::Data(part));
-                    sequence += 1;
-
-                    self.gossip_consensus
-                        .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
-                }
-
-                let msg = StreamMessage::new(stream_id, sequence, StreamContent::Fin(true));
-
-                self.gossip_consensus
-                    .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
-
-                let parts = state.part_store.all_parts(height, round);
+                let parts = self.broadcast_parts(state, parts, height, round).await?;
 
                 if let Some(value) = build_value_from_parts(&parts, height, round) {
                     reply_to.send(LocallyProposedValue::new(
@@ -334,10 +327,8 @@ impl Actor for AbciHost {
             } => {
                 let all_parts = state.part_store.all_parts(height, round);
 
-                let next_validators_hash = Bytes::from(
-                    self.params.initial_validator_set.get_keys()[0] // Todo: which validator are you looking from exactly?
-                        .as_bytes()
-                        .to_vec(),
+                let next_validators_hash = Bytes::copy_from_slice(
+                    hash_validator_set(&self.params.initial_validator_set).as_bytes(),
                 );
 
                 let proposer_address = state
@@ -366,34 +357,18 @@ impl Actor for AbciHost {
                 let process_proposal = abci::RequestProcessProposal {
                     txs: tx_bytes.clone(),
                     height: height.as_u64() as i64,
-                    proposed_last_commit: None, // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
-                    misbehavior: Vec::new(), // TODO THIS NEEDS TO BE ADDED IN THE DATA STRUCTURES OF THE PROPOSAL
+                    proposed_last_commit: None, // TODO: This needs to be added in the data structures of the proposal
+                    misbehavior: Vec::new(), // TODO: This needs to be added in the data structures of the proposal
                     hash: Bytes::new(),
                     time: None,
                     next_validators_hash: next_validators_hash.clone(),
                     proposer_address: proposer_address.clone(),
                 };
 
-                let request = abci::Request {
-                    value: Some(abci::request::Value::ProcessProposal(process_proposal)),
-                };
+                let status =
+                    AbciApp::process_proposal(&mut state.abci_client, process_proposal).await?;
 
-                let response = state.abci_client.request_with_flush(request).await?.value;
-                let status = match response {
-                    Some(abci::response::Value::ProcessProposal(proc)) => proc.status,
-
-                    Some(other) => {
-                        error!("Received unexpected response from ABCI app: {other:?}");
-                        return Ok(());
-                    }
-
-                    None => {
-                        error!("No response from ABCI app");
-                        return Ok(());
-                    }
-                };
-
-                info!("Proposal has been accepted if status is 1: {status}");
+                info!("Proposal status: {status:?}");
 
                 // *** END PROCESS PROPOSAL
 
@@ -409,18 +384,8 @@ impl Actor for AbciHost {
                     proposer_address,
                 };
 
-                let request = abci::Request {
-                    value: Some(abci::request::Value::FinalizeBlock(finalize_block)),
-                };
-
-                let response = state.abci_client.request_with_flush(request).await?.value;
-                let response = match response {
-                    Some(abci::response::Value::FinalizeBlock(resp)) => resp,
-                    other => {
-                        error!("Got an unexpected response from ABCI app: {other:?}");
-                        return Ok(());
-                    }
-                };
+                let response =
+                    AbciApp::finalize_block(&mut state.abci_client, finalize_block).await?;
 
                 // Here is where the finalize block events are received. For consensus the important part is the app_hash
                 let app_hash = process_finalize_block_response(response);
@@ -429,35 +394,15 @@ impl Actor for AbciHost {
                 // **** END FINALIZE BLOCK
 
                 // **** COMMIT
-                let request_commit = abci::RequestCommit {};
-                let request = abci::Request {
-                    value: Some(abci::request::Value::Commit(request_commit)),
-                };
 
-                let response = state.abci_client.request_with_flush(request).await?.value;
-
-                let retain_height = match response {
-                    Some(abci::response::Value::Commit(response)) => response.retain_height,
-
-                    Some(other) => {
-                        error!("Received unexpected response from ABCI app: {other:?}");
-                        return Ok(());
-                    }
-
-                    None => {
-                        error!("No response from ABCI app");
-                        return Ok(());
-                    }
-                };
-
-                info!("Retain height: {retain_height}");
-
-                // TODO: Prune block and state store based on the retain height returned here
+                let retain_height = AbciApp::commit(&mut state.abci_client).await?;
+                info!("Retain height: {}", retain_height.unwrap_or_default());
 
                 // **** END COMMIT
 
-                // Prune the PartStore of all parts for heights lower than `state.height`
-                state.part_store.prune(state.height); // This is cleaning only internal actor state
+                // Prune the PartStore of all parts for heights lower than `prune_height`
+                let prune_height = retain_height.unwrap_or(state.height);
+                state.part_store.prune(prune_height); // This is cleaning only internal actor state
 
                 // Start the next height
                 consensus.cast(ConsensusMsg::StartHeight(state.height.increment()))?;

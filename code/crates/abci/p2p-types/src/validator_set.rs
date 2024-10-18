@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Address, PublicKey, Validator};
 
 /// A validator set contains a list of validators sorted by address.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct ValidatorSet {
     pub validators: Vec<Validator>,
 }

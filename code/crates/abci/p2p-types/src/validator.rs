@@ -1,14 +1,24 @@
+use bytes::{Bytes, BytesMut};
 use malachite_common::VotingPower;
 use serde::{Deserialize, Serialize};
 
 use crate::{Address, PublicKey};
 
 /// A validator is a public key and voting power
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Validator {
     pub address: Address,
     pub public_key: PublicKey,
     pub voting_power: VotingPower,
+}
+
+impl Validator {
+    pub fn hash_bytes(&self) -> Bytes {
+        let mut bytes = BytesMut::new();
+        bytes.extend_from_slice(self.public_key.as_bytes().as_ref());
+        bytes.extend_from_slice(self.voting_power.to_be_bytes().as_ref());
+        bytes.freeze()
+    }
 }
 
 impl Validator {

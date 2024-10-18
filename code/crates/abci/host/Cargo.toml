@@ -31,7 +31,8 @@ tracing.workspace          = true
 tendermint.workspace       = true
 tendermint-proto.workspace = true
 tokio-util                 = { workspace = true, features = ["codec"] }
-futures-util = "0.3.31"
+futures-util               = "0.3"
+sha2                       = "0.10"
 
 [lints]
 workspace = true
