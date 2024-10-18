@@ -117,7 +117,7 @@ impl StarknetHost {
         parts: &[Arc<ProposalPart>],
         height: Height,
         round: Round,
-    ) -> Option<(BlockHash, Address, Validity, Extension)> {
+    ) -> Option<(BlockHash, Address, Validity, Option<Extension>)> {
         if parts.is_empty() {
             return None;
         }
@@ -134,7 +134,7 @@ impl StarknetHost {
 
         trace!(parts.len = %parts.len(), "Building proposal content from parts");
 
-        let extension = if self.host.params().vote_extensions.enabled {
+        let extension = self.host.params().vote_extensions.enabled.then(|| {
             debug!(
                 size = %self.host.params().vote_extensions.size,
                 "Vote extensions are enabled"
@@ -145,9 +145,7 @@ impl StarknetHost {
             rand::thread_rng().fill_bytes(&mut bytes);
 
             Extension::from(bytes)
-        } else {
-            Extension::default()
-        };
+        });
 
         let block_hash = {
             let mut block_hasher = sha3::Keccak256::new();
@@ -193,7 +191,10 @@ impl StarknetHost {
 
         let all_parts = state.part_store.all_parts(height, round);
 
-        debug!("The store has {} blocks", state.part_store.blocks_stored());
+        debug!(
+            count = state.part_store.blocks_stored(),
+            "The store has blocks"
+        );
 
         // TODO: Do more validations, e.g. there is no higher tx proposal part,
         //       check that we have received the proof, etc.
@@ -297,20 +298,20 @@ impl Actor for StarknetHost {
                     .cast(GossipConsensusMsg::BroadcastProposalPart(msg))?;
 
                 let block_hash = rx_hash.await?;
-                debug!("Got block with hash: {block_hash}");
+                debug!(%block_hash, "Got block");
 
                 let parts = state.part_store.all_parts(height, round);
 
                 let extension = extension_part
-                    .and_then(|part| part.as_transactions().map(|txs| txs.to_bytes().unwrap()))
-                    .unwrap_or_default();
+                    .and_then(|part| part.as_transactions().and_then(|txs| txs.to_bytes().ok()))
+                    .map(Extension::from);
 
                 if let Some(value) = self.build_value_from_parts(&parts, height, round) {
                     reply_to.send(LocallyProposedValue::new(
                         value.height,
                         value.round,
                         value.value,
-                        Extension::from(extension),
+                        extension,
                     ))?;
                 }
 
