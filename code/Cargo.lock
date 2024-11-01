@@ -2664,7 +2664,6 @@ dependencies = [
  "bytesize",
  "derive-where",
  "eyre",
- "itertools",
  "libp2p-identity",
  "malachite-actors",
  "malachite-blocksync",

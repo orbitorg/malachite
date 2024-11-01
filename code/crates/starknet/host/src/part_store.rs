@@ -57,4 +57,8 @@ impl<Ctx: Context> PartStore<Ctx> {
     pub fn len(&self) -> usize {
         self.store.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.store.is_empty()
+    }
 }
