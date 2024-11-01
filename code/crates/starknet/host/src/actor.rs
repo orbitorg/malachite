@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use eyre::eyre;
 
@@ -40,7 +39,7 @@ pub struct HostState {
     round: Round,
     proposer: Option<Address>,
     block_store: BlockStore,
-    part_store: PartStore<MockContext>,
+    part_store: PartStore,
     part_streams_map: PartStreamsMap,
     next_stream_id: StreamId,
 }
@@ -51,8 +50,8 @@ impl HostState {
             height: Height::new(0, 0),
             round: Round::Nil,
             proposer: None,
-            block_store: BlockStore::new(home_dir.join("blocks.db")).unwrap(),
-            part_store: PartStore::default(),
+            block_store: BlockStore::new(home_dir.join("db").join("blocks.db")).unwrap(),
+            part_store: PartStore::new(home_dir.join("db").join("parts.db")).unwrap(),
             part_streams_map: PartStreamsMap::default(),
             next_stream_id: StreamId::default(),
         }
@@ -97,7 +96,7 @@ impl StarknetHost {
     #[tracing::instrument(skip_all, fields(%height, %round))]
     pub fn build_value_from_parts(
         &self,
-        parts: &[Arc<ProposalPart>],
+        parts: &[ProposalPart],
         height: Height,
         round: Round,
     ) -> Option<ProposedValue<MockContext>> {
@@ -117,7 +116,7 @@ impl StarknetHost {
     #[tracing::instrument(skip_all, fields(%height, %round))]
     pub fn build_proposal_content_from_parts(
         &self,
-        parts: &[Arc<ProposalPart>],
+        parts: &[ProposalPart],
         height: Height,
         round: Round,
     ) -> Option<(BlockHash, Address, Validity, Option<Extension>)> {
@@ -178,7 +177,9 @@ impl StarknetHost {
         round: Round,
         part: ProposalPart,
     ) -> Option<ProposedValue<MockContext>> {
-        state.part_store.store(height, round, part.clone());
+        if let Err(e) = state.part_store.store(height, round, part.clone()) {
+            error!(%e, "Error while storing part in the part store");
+        }
 
         if let ProposalPart::Transactions(_txes) = &part {
             debug!("Simulating tx execution and proof verification");
@@ -192,7 +193,13 @@ impl StarknetHost {
             trace!("Simulation took {exec_time:?} to execute {num_txes} txes");
         }
 
-        let all_parts = state.part_store.all_parts(height, round);
+        let all_parts = match state.part_store.all_parts(height, round) {
+            Ok(parts) => parts,
+            Err(e) => {
+                error!(%e, "Error while fetching parts from the part store");
+                return None;
+            }
+        };
 
         trace!(
             count = state.part_store.len(),
@@ -229,7 +236,9 @@ impl StarknetHost {
         }
 
         let retain_height = Height::new(retain_height, max_height.fork_id);
-        state.block_store.prune(retain_height).await;
+        if let Err(e) = state.block_store.prune(retain_height).await {
+            error!(%e, "Error while pruning block store");
+        }
     }
 }
 
@@ -293,7 +302,9 @@ impl Actor for StarknetHost {
                 let mut extension_part = None;
 
                 while let Some(part) = rx_part.recv().await {
-                    state.part_store.store(height, round, part.clone());
+                    if let Err(e) = state.part_store.store(height, round, part.clone()) {
+                        error!(%e, "Error while storing part in the part store");
+                    }
 
                     if let ProposalPart::Transactions(_) = &part {
                         if extension_part.is_none() {
@@ -323,7 +334,13 @@ impl Actor for StarknetHost {
                 let block_hash = rx_hash.await?;
                 debug!(%block_hash, "Got block");
 
-                let parts = state.part_store.all_parts(height, round);
+                let parts = match state.part_store.all_parts(height, round) {
+                    Ok(parts) => parts,
+                    Err(e) => {
+                        error!(%e, "Error while fetching parts from the part store");
+                        return Ok(());
+                    }
+                };
 
                 let extension = extension_part
                     .and_then(|part| part.as_transactions().and_then(|txs| txs.to_bytes().ok()))
@@ -402,50 +419,59 @@ impl Actor for StarknetHost {
             } => {
                 let height = proposal.height;
                 let round = proposal.round;
-                let mut all_parts = state.part_store.all_parts(height, round);
 
-                let mut all_txes = vec![];
-                for arc in all_parts.iter_mut() {
-                    let part = Arc::unwrap_or_clone((*arc).clone());
-                    if let ProposalPart::Transactions(transactions) = part {
-                        let mut txes = transactions.into_vec();
-                        all_txes.append(&mut txes);
+                let all_parts = match state.part_store.all_parts(height, round) {
+                    Ok(parts) => parts,
+                    Err(e) => {
+                        error!(%e, "Error while fetching parts from the part store");
+                        return Ok(());
                     }
-                }
+                };
 
-                // Build the block from proposal parts and commits and store it
-                state
-                    .block_store
-                    .store(&proposal, &all_txes, &commits)
-                    .await;
+                let mut tx_hashes = vec![];
+                let mut all_txes = vec![];
 
-                // Update metrics
+                // TODO: Fuse these computations into a single one
                 let block_size: usize = all_parts.iter().map(|p| p.size_bytes()).sum();
+                let tx_count: usize = all_parts.iter().map(|p| p.tx_count()).sum();
                 let extension_size: usize = commits
                     .iter()
                     .map(|c| c.extension.as_ref().map(|e| e.size_bytes()).unwrap_or(0))
                     .sum();
 
                 let block_and_commits_size = block_size + extension_size;
-                let tx_count: usize = all_parts.iter().map(|p| p.tx_count()).sum();
 
+                for part in all_parts {
+                    if let ProposalPart::Transactions(txes) = part {
+                        // Gather hashes of all the tx-es included in the block,
+                        // so that we can notify the mempool to remove them.
+                        tx_hashes.extend(txes.as_slice().iter().map(|tx| tx.hash()));
+
+                        let mut txes = txes.into_vec();
+                        all_txes.append(&mut txes);
+                    }
+                }
+
+                // Build the block from proposal parts and commits and store it
+                if let Err(e) = state
+                    .block_store
+                    .store(&proposal, &all_txes, &commits)
+                    .await
+                {
+                    error!(%e, "Error while storing block");
+                }
+
+                // Update metrics
                 self.metrics.block_tx_count.observe(tx_count as f64);
                 self.metrics
                     .block_size_bytes
                     .observe(block_and_commits_size as f64);
                 self.metrics.finalized_txes.inc_by(tx_count as u64);
 
-                // Gather hashes of all the tx-es included in the block,
-                // so that we can notify the mempool to remove them.
-                let mut tx_hashes = vec![];
-                for part in all_parts {
-                    if let ProposalPart::Transactions(txes) = &part.as_ref() {
-                        tx_hashes.extend(txes.as_slice().iter().map(|tx| tx.hash()));
-                    }
-                }
-
                 // Prune the PartStore of all parts for heights lower than `state.height`
-                state.part_store.prune(state.height);
+                if let Err(e) = state.part_store.prune(state.height) {
+                    error!(%e, "Error while pruning part store");
+                }
 
                 // Store the block
                 self.prune_block_store(state).await;
@@ -468,15 +494,13 @@ impl Actor for StarknetHost {
                 debug!(%height, "Received request for block");
 
                 match state.block_store.get(height).await {
-                    None => {
+                    Ok(None) => {
                         let min = state.block_store.first_height().unwrap_or_default();
                         let max = state.block_store.last_height().unwrap_or_default();
-
-                        warn!("No block for {height}, available blocks: {min}..={max}",);
-
+                        warn!(%height, "No block for that height, available blocks: {min}..={max}",);
                         reply_to.send(None)?;
                     }
-                    Some(block) => {
+                    Ok(Some(block)) => {
                         let block = SyncedBlock {
                             proposal: block.proposal,
                             block_bytes: block.block.to_bytes().unwrap(),
@@ -485,6 +509,10 @@ impl Actor for StarknetHost {
 
                         debug!("Got block at {height}");
                         reply_to.send(Some(block))?;
+                    }
+                    Err(e) => {
+                        error!(%e, %height, "Error while fetching block from store");
+                        reply_to.send(None)?;
                     }
                 }
 
