@@ -46,12 +46,15 @@ pub struct HostState {
 
 impl HostState {
     fn new(home_dir: PathBuf) -> Self {
+        let db_path = home_dir.join("db");
+        std::fs::create_dir_all(&db_path).unwrap();
+
         Self {
             height: Height::new(0, 0),
             round: Round::Nil,
             proposer: None,
-            block_store: BlockStore::new(home_dir.join("db").join("blocks.db")).unwrap(),
-            part_store: PartStore::new(home_dir.join("db").join("parts.db")).unwrap(),
+            block_store: BlockStore::new(db_path.join("blocks.db")).unwrap(),
+            part_store: PartStore::new(db_path.join("parts.db")).unwrap(),
             part_streams_map: PartStreamsMap::default(),
             next_stream_id: StreamId::default(),
         }

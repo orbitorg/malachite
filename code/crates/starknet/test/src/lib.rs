@@ -252,6 +252,8 @@ impl<const N: usize> Test<N> {
                     .unwrap()
                     .into_path();
 
+            info!("Home directory: {}", home_dir.display());
+
             set.spawn(
                 async move {
                     let id = node.id;
