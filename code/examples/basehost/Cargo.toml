@@ -1,0 +1,18 @@
+[package]
+name = "basehost"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+malachite-common    = { workspace = true }
+malachite-consensus = { workspace = true }
+malachite-test      = { workspace = true }
+
+[lints]
+workspace = true
+
+
