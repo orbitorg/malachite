@@ -24,7 +24,10 @@ members = [
 
   # Starknet
   "crates/starknet/*",
-  "crates/starknet/*"
+  "crates/starknet/*",
+
+  # Examples
+  "examples/basehost"
 ]
 
 [workspace.package]
