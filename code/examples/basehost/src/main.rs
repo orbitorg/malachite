@@ -10,8 +10,11 @@
 
 use std::process::exit;
 use std::sync::mpsc;
-
+use std::sync::mpsc::Receiver;
+use std::thread;
+use std::time::Duration;
 use crate::context::BaseContext;
+use crate::context::height::BaseHeight;
 use crate::network::Network;
 
 mod context;
@@ -19,27 +22,37 @@ mod network;
 
 fn main() {
     // Create a network of 4 peers
-    let n = Network::<BaseContext>::new(4);
+    let mut n = Network::<BaseContext>::new(4);
 
     // Channels on which we'll receive the decided heights
     let (tx, rx) = mpsc::channel();
 
-    // Start the network, handling orchestration of messages to build
-    // blocks
-    n.start(tx);
+    // Spawn a thread in the background that handles decided values
+    handle_decisions_background(rx);
 
-    loop {
-        let res = rx.recv();
-        match res {
-            Ok(height) => {
-                println!("new height decided: {}", height);
+    // Blocking method, starts the network & handles orchestration of
+    // block building
+    n.run(tx);
+
+    // Todo: Clean stop
+}
+
+fn handle_decisions_background(rx: Receiver<BaseHeight>) {
+    thread::spawn(move || {
+        // Busy loop, simply consume the decided heights
+        loop {
+            let res = rx.recv();
+            match res {
+                Ok(height) => {
+                    println!("new height decided: {}", height);
+                }
+                Err(err) => {
+                    println!("unable to decide on new height with message: {:?}", err);
+                    println!("stopping");
+                    exit(0);
+                }
             }
-            Err(err) => {
-                println!("unable to decide on new height with message: {:?}", err);
-                println!("stopping");
-                exit(0);
-            }
+            thread::sleep(Duration::from_secs(1));
         }
-        // Todo: Clean stop
-    }
+    });
 }

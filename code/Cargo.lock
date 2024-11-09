@@ -404,7 +404,9 @@ version = "0.1.0"
 dependencies = [
  "malachite-common",
  "malachite-consensus",
+ "malachite-metrics",
  "malachite-test",
+ "rand",
 ]
 
 [[package]]
