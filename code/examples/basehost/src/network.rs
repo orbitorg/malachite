@@ -1,14 +1,19 @@
 /// A network is a set of peers, comprising an instance of
 /// a Malachite-based decentralized system
-use std::sync::mpsc::Sender;
 
-use malachite_common::Context;
-use malachite_consensus::{Params, State};
+use std::sync::mpsc::Sender;
+use std::thread;
+use rand::seq::SliceRandom;
+use std::time::Duration;
 
 use crate::context::address::BaseAddress;
 use crate::context::height::BaseHeight;
 use crate::context::peer_set::BasePeerSet;
 use crate::context::BaseContext;
+use malachite_common::Context;
+use malachite_consensus::Input::StartHeight;
+use malachite_consensus::{Effect, Params, State};
+use malachite_metrics::{Metrics, SharedRegistry};
 
 #[allow(dead_code)]
 pub struct Network<Ctx: Context> {
@@ -66,12 +71,62 @@ where
         }
     }
 
-    pub fn start(&self, tx: Sender<BaseHeight>) {
-        // Orchestrate the starting of consensus at every peer in the network
+    // Orchestrate the execution of this network across all peers
+    pub fn run(&mut self, tx: Sender<BaseHeight>) {
+        // Todo: Potentially introduce an intermediate abstraction
+        //     layer to handle timeouts
 
-        // thread::spawn(move || {
-        //      Todo .. the actual work
-        //     });
+        let _metrics = self.bootstrap_network();
+
+        // Busy loop to orchestrate among peers
+        loop {
+            // Pick a random peer and do 1 step
+            self.step_peer();
+
+            // Send the decisions to the caller
+            tx.send(BaseHeight::new(1)).unwrap();
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    // Sends a simple `Start` to each peer
+    fn bootstrap_network(&self) -> Result<(), Metrics> {
+
+        let registry = SharedRegistry::global();
+        let metrics = Metrics::register(registry);
+
+        // The starting validator set
+        let val_set: <Ctx as Context>::ValidatorSet = self
+            .params
+            .get(0)
+            .expect("no params found")
+            .initial_validator_set
+            .clone();
+        let height: <Ctx as Context>::Height = BaseHeight::default();
+
+        let input = StartHeight(height, val_set);
+
+        for peer_state in self.state.iter() {
+            let mut pstate = peer_state.clone();
+
+            // Kick off consensus at this peer
+            malachite_consensus::process!(
+                input: input,
+                state: &mut pstate,
+                metrics: &metrics,
+                with: effect =>
+                    self.handle_effect(effect)
+            )
+        }
+    }
+
+    fn step_peer(&mut self) {
+        let _peer_state = self
+            .state
+            .choose(&mut rand::thread_rng())
+            .expect("the network has no peers");
+
+        // let input;
 
         // malachite_consensus::process!(
         //     input: input,
@@ -81,6 +136,14 @@ where
         //         self.handle_effect(myself, &mut state.timers, &mut state.timeouts, effect).await
         //     }
         // )
-        tx.send(BaseHeight::new(1)).unwrap()
     }
+
+    fn handle_effect(&self, _effect: Effect<Ctx>) -> Result<(), Metrics> {
+        Ok(todo!())
+    }
+
+    // TODO refactor into this method
+    // fn get_val_set(&self) -> {
+    //
+    // }
 }

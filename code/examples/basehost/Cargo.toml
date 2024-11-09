@@ -11,6 +11,9 @@ rust-version.workspace = true
 malachite-common    = { workspace = true }
 malachite-consensus = { workspace = true }
 malachite-test      = { workspace = true }
+malachite-metrics   = { workspace = true }
+
+rand = "0.8.5"
 
 [lints]
 workspace = true
