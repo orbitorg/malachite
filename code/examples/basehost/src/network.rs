@@ -1,43 +1,35 @@
+use rand::seq::SliceRandom;
 /// A network is a set of peers, comprising an instance of
 /// a Malachite-based decentralized system
-
 use std::sync::mpsc::Sender;
 use std::thread;
-use rand::seq::SliceRandom;
 use std::time::Duration;
+
+use malachite_consensus::Input::StartHeight;
+use malachite_consensus::{Effect, Error, Input, Params, Resume, State};
+use malachite_metrics::{Metrics, SharedRegistry};
 
 use crate::context::address::BaseAddress;
 use crate::context::height::BaseHeight;
 use crate::context::peer_set::BasePeerSet;
 use crate::context::BaseContext;
-use malachite_common::Context;
-use malachite_consensus::Input::StartHeight;
-use malachite_consensus::{Effect, Params, State};
-use malachite_metrics::{Metrics, SharedRegistry};
 
 #[allow(dead_code)]
-pub struct Network<Ctx: Context> {
+pub struct Network {
     // The set of all peers
     // Remains static throughout the lifetime
     peers: BasePeerSet,
-
-    // The state of each peer
-    // Todo: Rethink this: the vector-based solution seems awkward
-    state: Vec<State<Ctx>>,
 
     // Params of each peer
     // Todo: Same as for the state vector, revisit this decision
     // Todo: Unclear if we need to store this separately for each
     //  peer, because the `state` variable also has the params
-    params: Vec<Params<Ctx>>,
+    params: Vec<Params<BaseContext>>,
 }
 
-impl<Ctx> Network<Ctx>
-where
-    Ctx: Context,
-{
-    pub fn new(size: u32) -> Network<BaseContext> {
-        let mut state = vec![];
+impl Network {
+    pub fn new(size: u32) -> (Network, Vec<State<BaseContext>>) {
+        let mut states = vec![];
         let mut params = vec![];
 
         // Construct the set of peers that comprise the network
@@ -61,28 +53,31 @@ where
 
             // The state at this specific peer
             let s = State::new(ctx.clone(), p);
-            state.push(s);
+            states.push(s);
         }
 
-        Network {
-            peers: val_set,
-            state,
-            params,
-        }
+        (
+            Network {
+                peers: val_set,
+                params,
+            },
+            states,
+        )
     }
 
     // Orchestrate the execution of this network across all peers
-    pub fn run(&mut self, tx: Sender<BaseHeight>) {
+    pub fn run(&mut self, tx: Sender<BaseHeight>, states: &mut Vec<State<BaseContext>>) {
         // Todo: Potentially introduce an intermediate abstraction
         //     layer to handle timeouts
 
-        let _metrics = self.bootstrap_network();
+        self.bootstrap_network(states);
 
         // Busy loop to orchestrate among peers
         loop {
             // Pick a random peer and do 1 step
-            self.step_peer();
-
+            // TODO
+            // self.step_peer();
+            //
             // Send the decisions to the caller
             tx.send(BaseHeight::new(1)).unwrap();
             thread::sleep(Duration::from_secs(1));
@@ -90,39 +85,60 @@ where
     }
 
     // Sends a simple `Start` to each peer
-    fn bootstrap_network(&self) -> Result<(), Metrics> {
-
+    fn bootstrap_network(&mut self, states: &mut Vec<State<BaseContext>>) {
         let registry = SharedRegistry::global();
         let metrics = Metrics::register(registry);
 
         // The starting validator set
-        let val_set: <Ctx as Context>::ValidatorSet = self
+        let val_set = self
             .params
             .get(0)
             .expect("no params found")
             .initial_validator_set
             .clone();
-        let height: <Ctx as Context>::Height = BaseHeight::default();
+        let height = BaseHeight::default();
 
-        let input = StartHeight(height, val_set);
+        let input: Input<BaseContext> = StartHeight(height, val_set);
 
-        for peer_state in self.state.iter() {
-            let mut pstate = peer_state.clone();
+        let mut position = 0;
+        for peer_state in states.iter_mut() {
+            // Todo: Correlation states <-> params is very fragile
+            //     major refactor needed
+            let peer_params = self
+                .params
+                .get(position)
+                .expect("could not identify peer at next position")
+                .clone();
+            println!("using peer {}", peer_params.address.0);
+
+            position += 1;
 
             // Kick off consensus at this peer
-            malachite_consensus::process!(
-                input: input,
-                state: &mut pstate,
-                metrics: &metrics,
-                with: effect =>
-                    self.handle_effect(effect)
-            )
+            self.step_peer(input.clone(), &peer_params, &metrics, peer_state)
+                .expect("unknown error during step_peer");
         }
     }
 
-    fn step_peer(&mut self) {
+    fn step_peer(
+        &mut self,
+        input: Input<BaseContext>,
+        peer_params: &Params<BaseContext>,
+        metrics: &Metrics,
+        peer_state: &mut State<BaseContext>,
+    ) -> Result<(), Error<BaseContext>> {
+        malachite_consensus::process!(
+            input: input,
+            state: peer_state,
+            metrics: metrics,
+            with: effect =>
+                self.handle_effect(peer_params, effect)
+        )
+    }
+
+    #[allow(dead_code)]
+    fn step_peer_simple(&mut self) {
         let _peer_state = self
-            .state
+            .params
             .choose(&mut rand::thread_rng())
             .expect("the network has no peers");
 
@@ -138,12 +154,59 @@ where
         // )
     }
 
-    fn handle_effect(&self, _effect: Effect<Ctx>) -> Result<(), Metrics> {
-        Ok(todo!())
-    }
+    fn handle_effect(
+        &self,
+        peer_params: &Params<BaseContext>,
+        effect: Effect<BaseContext>,
+    ) -> Result<Resume<BaseContext>, String> {
+        let peer_id = peer_params.address.0.to_owned();
 
-    // TODO refactor into this method
-    // fn get_val_set(&self) -> {
-    //
-    // }
+        // Todo: Handle the actual side-effects
+        // Todo: Use proper logging w/ scoped vars
+        match effect {
+            Effect::ResetTimeouts => {
+                println!("\t{}** ResetTimeouts", peer_id);
+
+                Ok(Resume::Continue)
+            }
+            Effect::CancelAllTimeouts => {
+                println!("\t{}** CancelAllTimeouts", peer_id);
+
+                Ok(Resume::Continue)
+            }
+            Effect::CancelTimeout(_) => {
+                panic!("CancelTimeout not impl")
+            }
+            Effect::ScheduleTimeout(_) => {
+                println!("\t{}** ScheduleTimeout", peer_id);
+
+                Ok(Resume::Continue)
+            }
+            Effect::StartRound(_, _, _) => {
+                println!("\t{}** StartRound", peer_id);
+
+                Ok(Resume::Continue)
+            }
+            Effect::Broadcast(_) => {
+                panic!("Broadcast not impl")
+            }
+            Effect::GetValue(_, _, _) => {
+                println!("\t{}** GetValue", peer_id);
+
+                Ok(Resume::Continue)
+            }
+            Effect::GetValidatorSet(_) => {
+                panic!("GetValidatorSet not impl")
+            }
+            Effect::VerifySignature(_, _) => {
+                panic!("VerifySignature not impl")
+            }
+            Effect::Decide { .. } => {
+                panic!("Decide not impl")
+            }
+            Effect::SyncedBlock { .. } => {
+                panic!("SyncedBlock not impl")
+            }
+        }
+    }
 }
