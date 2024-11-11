@@ -13,7 +13,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 use std::time::Duration;
-use crate::context::BaseContext;
+
 use crate::context::height::BaseHeight;
 use crate::network::Network;
 
@@ -22,7 +22,7 @@ mod network;
 
 fn main() {
     // Create a network of 4 peers
-    let mut n = Network::<BaseContext>::new(4);
+    let (mut n, mut states) = Network::new(4);
 
     // Channels on which we'll receive the decided heights
     let (tx, rx) = mpsc::channel();
@@ -30,9 +30,9 @@ fn main() {
     // Spawn a thread in the background that handles decided values
     handle_decisions_background(rx);
 
-    // Blocking method, starts the network & handles orchestration of
+    // Blocking method, starts the network and handles orchestration of
     // block building
-    n.run(tx);
+    n.run(tx, &mut states);
 
     // Todo: Clean stop
 }

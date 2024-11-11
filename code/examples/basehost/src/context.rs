@@ -57,7 +57,12 @@ impl Context for BaseContext {
         height: Self::Height,
         round: Round,
     ) -> &'a Self::Validator {
-        todo!()
+        // Keep it simple, the proposer is always the same peer
+        println!("Selecting proposer at index 0");
+        validator_set
+            .peers
+            .get(0)
+            .expect("no peer found in the validator set")
     }
 
     fn sign_vote(&self, vote: Self::Vote) -> SignedMessage<Self, Self::Vote> {
