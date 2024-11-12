@@ -47,12 +47,17 @@ pub type HostRef<Ctx> = ActorRef<HostMsg<Ctx>>;
 
 /// Messages that need to be handled by the host actor.
 pub enum HostMsg<Ctx: Context> {
+    /// Consensus is ready to start.
+    ConsensusReady {
+        height: Ctx::Height,
+        consensus: ConsensusRef<Ctx>,
+    },
+
     /// Consensus has started a new round.
     StartRound {
         height: Ctx::Height,
         round: Round,
         proposer: Ctx::Address,
-        consensus: ConsensusRef<Ctx>,
     },
 
     /// Request to build a local block/value from Driver

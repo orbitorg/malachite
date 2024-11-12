@@ -66,7 +66,7 @@ pub enum Msg<Ctx: Context> {
     ReceivedProposedValue(ProposedValue<Ctx>),
 
     /// TODO
-    SyncBlock(Ctx::Height, SyncedBlock<Ctx>),
+    ReplayBlock(Ctx::Height, SyncedBlock<Ctx>),
 
     /// Get the status of the consensus state machine
     GetStatus(RpcReplyPort<Status<Ctx>>),
@@ -276,17 +276,22 @@ where
 
                             let height = state.consensus.driver.height();
 
-                            let result = self
-                                .process_input(
-                                    &myself,
-                                    state,
-                                    ConsensusInput::StartHeight(height, validator_set.clone()),
-                                )
-                                .await;
+                            self.host.cast(HostMsg::ConsensusReady {
+                                height,
+                                consensus: myself.clone(),
+                            })?;
 
-                            if let Err(e) = result {
-                                error!("Error when starting height {height}: {e:?}");
-                            }
+                            // let result = self
+                            //     .process_input(
+                            //         &myself,
+                            //         state,
+                            //         ConsensusInput::StartHeight(height, validator_set.clone()),
+                            //     )
+                            //     .await;
+                            //
+                            // if let Err(e) = result {
+                            //     error!("Error when starting height {height}: {e:?}");
+                            // }
                         }
                     }
 
@@ -428,7 +433,7 @@ where
                 Ok(())
             }
 
-            Msg::SyncBlock(height, block) => {
+            Msg::ReplayBlock(height, block) => {
                 if let Err(e) = self
                     .process_input(
                         &myself,
@@ -543,7 +548,6 @@ where
                     height,
                     round,
                     proposer,
-                    consensus: myself.clone(),
                 })?;
 
                 Ok(Resume::Continue)

@@ -7,7 +7,7 @@ use itertools::Itertools;
 use ractor::{async_trait, Actor, ActorProcessingErr, SpawnErr};
 use sha3::Digest;
 use tokio::time::Instant;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use malachite_actors::consensus::{ConsensusMsg, ConsensusRef};
 use malachite_actors::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef};
@@ -293,7 +293,7 @@ impl StarknetHost {
     async fn replay_block(
         &self,
         state: &mut HostState,
-        consensus: ConsensusRef<MockContext>,
+        consensus: &ConsensusRef<MockContext>,
         height: Height,
     ) -> Result<(), ActorProcessingErr> {
         if let Some(block) = state.block_store.get(height).await? {
@@ -302,7 +302,7 @@ impl StarknetHost {
                 certificate: block.certificate,
             };
 
-            consensus.cast(ConsensusMsg::SyncBlock(height, block))?;
+            consensus.cast(ConsensusMsg::ReplayBlock(height, block))?;
         } else {
             error!(%height, "No block found to replay");
         }
@@ -332,25 +332,36 @@ impl Actor for StarknetHost {
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
+            HostMsg::ConsensusReady { height, consensus } => {
+                state.height = height;
+
+                let last_seen_height = state.block_store.last_height().unwrap_or_default();
+
+                while state.height <= last_seen_height {
+                    warn!(height = %state.height, %last_seen_height, "Replaying block from the block store");
+
+                    // We are behind, we should catch up
+                    // Let's replay the block for this height
+                    self.replay_block(state, &consensus, state.height).await?;
+
+                    state.height = state.height.increment();
+                }
+
+                consensus.cast(ConsensusMsg::StartHeight(height))?;
+
+                Ok(())
+            }
+
             HostMsg::StartRound {
                 height,
                 round,
                 proposer,
-                consensus,
             } => {
                 state.height = height;
                 state.round = round;
                 state.proposer = Some(proposer);
 
-                let last_seen_height = state.block_store.last_height().unwrap_or_default();
-
-                if round.as_u32() == Some(0) && height <= last_seen_height {
-                    warn!(%height, %last_seen_height, "Starting height for which we already have a block, replaying the block");
-
-                    // We are behind, we should catch up
-                    // Let's replay the block for this height
-                    self.replay_block(state, consensus, height).await?;
-                }
+                info!(%height, %round, "Consensus has started a new round");
 
                 Ok(())
             }
