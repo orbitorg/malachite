@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use malachite_consensus::Input::{ProposeValue, StartHeight};
-use malachite_consensus::{Effect, Error, Input, Params, Resume, State};
+use malachite_consensus::{Effect, Error, Input, Params, Resume, SignedConsensusMsg, State};
 use malachite_metrics::Metrics;
 
 use crate::common;
@@ -40,8 +40,8 @@ impl Network {
         let mut params = vec![];
 
         // Construct the set of peers that comprise the network
-        let val_set = BasePeerSet::start_new(size);
         let ctx = BaseContext::new();
+        let val_set = BasePeerSet::start_new(size, ctx.public_key());
 
         // Construct the consensus states and params for each peer
         for i in 0..size {
@@ -224,8 +224,23 @@ impl Network {
 
                 Ok(Resume::Continue)
             }
-            Effect::Broadcast(_) => {
-                panic!("Broadcast not impl")
+            Effect::Broadcast(v) => {
+                println!("\t{}** Broadcast", peer_id);
+
+                // Push the signed consensus message into the inbox of all peers
+                for (_, ix) in self.inbox.iter_mut() {
+                    // Todo: Any way to avoid clones below?
+                    match v {
+                        SignedConsensusMsg::Vote(ref sv) => {
+                            ix.push(Input::Vote(sv.clone()));
+                        }
+                        SignedConsensusMsg::Proposal(ref sp) => {
+                            ix.push(Input::Proposal(sp.clone()));
+                        }
+                    }
+                }
+
+                Ok(Resume::Continue)
             }
             Effect::GetValue(h, r, _) => {
                 println!("\t{}** GetValue", peer_id);
