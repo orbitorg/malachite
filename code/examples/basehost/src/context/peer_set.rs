@@ -1,11 +1,11 @@
 /// Implementation of `PeerSet` and some utility methods.
 use std::cmp::PartialEq;
 
-use malachite_common::{ValidatorSet, VotingPower};
-
 use crate::context::address::BaseAddress;
 use crate::context::peer::BasePeer;
 use crate::context::BaseContext;
+use malachite_common::{ValidatorSet, VotingPower};
+use malachite_test::PublicKey;
 
 /// A minimal type capturing a set of peers.
 /// Implements [`ValidatorSet`].
@@ -15,11 +15,14 @@ pub struct BasePeerSet {
 }
 
 impl BasePeerSet {
-    pub fn start_new(size: u32) -> Self {
+    // Start a new network with the given number of peers
+    // Simplifying assumption: All peers have the same public key
+    // Todo: Make this more reflective of real conditions
+    pub fn start_new(size: u32, pub_key: PublicKey) -> Self {
         let mut peers = vec![];
 
         for i in 0..size {
-            let peer = BasePeer::new(i.to_string());
+            let peer = BasePeer::new(i.to_string(), pub_key);
             println!("{}: started ", peer);
 
             peers.push(peer);

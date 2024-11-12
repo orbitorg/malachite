@@ -1,9 +1,8 @@
 use std::fmt;
 
-use malachite_common::{PublicKey, Validator, VotingPower};
-
 use crate::context::address::BaseAddress;
 use crate::context::BaseContext;
+use malachite_common::{PublicKey, Validator, VotingPower};
 
 /// This is the voting power of each peer.
 pub const BASE_VOTING_POWER: u64 = 1;
@@ -14,12 +13,14 @@ pub const BASE_VOTING_POWER: u64 = 1;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BasePeer {
     pub id: BaseAddress,
+    pub public_key: PublicKey<BaseContext>,
 }
 
 impl BasePeer {
-    pub fn new(id: String) -> BasePeer {
+    pub fn new(id: String, public_key: PublicKey<BaseContext>) -> BasePeer {
         BasePeer {
             id: BaseAddress::new(id),
+            public_key,
         }
     }
 }
@@ -36,7 +37,7 @@ impl Validator<BaseContext> for BasePeer {
     }
 
     fn public_key(&self) -> &PublicKey<BaseContext> {
-        todo!()
+        &self.public_key
     }
 
     fn voting_power(&self) -> VotingPower {

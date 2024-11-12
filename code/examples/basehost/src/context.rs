@@ -39,6 +39,10 @@ impl BaseContext {
 
         Self { private_key: sk }
     }
+
+    pub fn public_key(&self) -> PublicKey<BaseContext> {
+        self.private_key.public_key()
+    }
 }
 
 #[allow(unused_variables)]
