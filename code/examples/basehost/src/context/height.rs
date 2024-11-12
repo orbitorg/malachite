@@ -7,6 +7,7 @@ use malachite_common::Height;
 pub struct BaseHeight(u64);
 
 impl BaseHeight {
+    #[allow(dead_code)]
     pub const fn new(value: u64) -> Self {
         Self { 0: value }
     }

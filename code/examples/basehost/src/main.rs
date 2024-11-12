@@ -17,6 +17,7 @@ use std::time::Duration;
 use crate::context::height::BaseHeight;
 use crate::network::Network;
 
+mod common;
 mod context;
 mod network;
 
