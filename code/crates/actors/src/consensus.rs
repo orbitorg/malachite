@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use eyre::eyre;
 use libp2p::PeerId;
+use malachite_blocksync::SyncedBlock;
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
 use tokio::sync::broadcast;
 use tokio::time::Instant;
@@ -63,6 +64,9 @@ pub enum Msg<Ctx: Context> {
 
     /// Received and assembled the full value proposed by a validator
     ReceivedProposedValue(ProposedValue<Ctx>),
+
+    /// TODO
+    SyncBlock(Ctx::Height, SyncedBlock<Ctx>),
 
     /// Get the status of the consensus state machine
     GetStatus(RpcReplyPort<Status<Ctx>>),
@@ -319,7 +323,7 @@ where
                             )
                             .await
                         {
-                            error!(%height, %request_id, "Error when processing received synced block: {e:?}");
+                            error!(%height, %request_id, "Error when processing synced block: {e:?}");
 
                             let Some(block_sync) = self.block_sync.as_ref() else {
                                 warn!("Received BlockSync response but BlockSync actor is not available");
@@ -330,9 +334,7 @@ where
                                 block_sync
                                     .cast(BlockSyncMsg::InvalidCertificate(peer, certificate, e))
                                     .map_err(|e| {
-                                        eyre!(
-                                            "Error when notifying BlockSync of invalid certificate: {e:?}"
-                                        )
+                                        eyre!("Error when notifying BlockSync of invalid certificate: {e:?}")
                                     })?;
                             }
                         }
@@ -421,6 +423,21 @@ where
 
                 if let Err(e) = result {
                     error!("Error when processing GossipEvent message: {e:?}");
+                }
+
+                Ok(())
+            }
+
+            Msg::SyncBlock(height, block) => {
+                if let Err(e) = self
+                    .process_input(
+                        &myself,
+                        state,
+                        ConsensusInput::ReceivedSyncedBlock(block.block_bytes, block.certificate),
+                    )
+                    .await
+                {
+                    error!(%height, "Error when processing synced block: {e:?}");
                 }
 
                 Ok(())
@@ -526,6 +543,7 @@ where
                     height,
                     round,
                     proposer,
+                    consensus: myself.clone(),
                 })?;
 
                 Ok(Resume::Continue)

@@ -52,6 +52,7 @@ pub enum HostMsg<Ctx: Context> {
         height: Ctx::Height,
         round: Round,
         proposer: Ctx::Address,
+        consensus: ConsensusRef<Ctx>,
     },
 
     /// Request to build a local block/value from Driver

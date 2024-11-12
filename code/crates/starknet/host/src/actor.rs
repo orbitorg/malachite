@@ -9,7 +9,7 @@ use sha3::Digest;
 use tokio::time::Instant;
 use tracing::{debug, error, trace, warn};
 
-use malachite_actors::consensus::ConsensusMsg;
+use malachite_actors::consensus::{ConsensusMsg, ConsensusRef};
 use malachite_actors::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef};
 use malachite_actors::host::{LocallyProposedValue, ProposedValue};
 use malachite_actors::util::streaming::{StreamContent, StreamId, StreamMessage};
@@ -289,6 +289,26 @@ impl StarknetHost {
             }
         }
     }
+
+    async fn replay_block(
+        &self,
+        state: &mut HostState,
+        consensus: ConsensusRef<MockContext>,
+        height: Height,
+    ) -> Result<(), ActorProcessingErr> {
+        if let Some(block) = state.block_store.get(height).await? {
+            let block = SyncedBlock {
+                block_bytes: block.block.to_bytes().unwrap(),
+                certificate: block.certificate,
+            };
+
+            consensus.cast(ConsensusMsg::SyncBlock(height, block))?;
+        } else {
+            error!(%height, "No block found to replay");
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -316,10 +336,21 @@ impl Actor for StarknetHost {
                 height,
                 round,
                 proposer,
+                consensus,
             } => {
                 state.height = height;
                 state.round = round;
                 state.proposer = Some(proposer);
+
+                let last_seen_height = state.block_store.last_height().unwrap_or_default();
+
+                if round.as_u32() == Some(0) && height <= last_seen_height {
+                    warn!(%height, %last_seen_height, "Starting height for which we already have a block, replaying the block");
+
+                    // We are behind, we should catch up
+                    // Let's replay the block for this height
+                    self.replay_block(state, consensus, height).await?;
+                }
 
                 Ok(())
             }
