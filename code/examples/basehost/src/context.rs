@@ -1,7 +1,12 @@
-use address::BaseAddress;
-use malachite_common::{Context, NilOrVal, PublicKey, Round, Signature, SignedMessage, ValueId};
-use malachite_test::Ed25519;
+use rand::prelude::StdRng;
+use rand::SeedableRng;
 
+use malachite_common::{
+    Context, NilOrVal, PublicKey, Round, Signature, SignedMessage, SignedProposal, ValueId,
+};
+use malachite_test::{Ed25519, PrivateKey};
+
+use address::BaseAddress;
 use height::BaseHeight;
 use peer::BasePeer;
 use peer_set::BasePeerSet;
@@ -21,16 +26,18 @@ pub mod vote;
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct BaseContext {
-    // Todo: This is never being used.
-    //  It's probably necessary in all possible deployments ..
-    private_key: String,
+    private_key: PrivateKey,
 }
 
 impl BaseContext {
-    pub(crate) fn new() -> BaseContext {
-        Self {
-            private_key: "".into(),
-        }
+    pub fn new() -> BaseContext {
+        // The context is shared across all peers
+        // This is unusual, because each peer would normally have its own
+        // private/public key pair, but our application is unusual in this way
+        let mut rng = StdRng::seed_from_u64(0x42);
+        let sk = PrivateKey::generate(&mut rng);
+
+        Self { private_key: sk }
     }
 }
 
@@ -78,8 +85,10 @@ impl Context for BaseContext {
         todo!()
     }
 
-    fn sign_proposal(&self, proposal: Self::Proposal) -> SignedMessage<Self, Self::Proposal> {
-        todo!()
+    fn sign_proposal(&self, proposal: BaseProposal) -> SignedMessage<Self, BaseProposal> {
+        use signature::Signer;
+        let signature = self.private_key.sign(&proposal.to_bytes());
+        SignedProposal::new(proposal, signature)
     }
 
     fn verify_signed_proposal(
@@ -114,7 +123,12 @@ impl Context for BaseContext {
         pol_round: Round,
         address: Self::Address,
     ) -> Self::Proposal {
-        todo!()
+        BaseProposal {
+            height,
+            value,
+            proposer: address,
+            round,
+        }
     }
 
     fn new_prevote(

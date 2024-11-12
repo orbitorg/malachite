@@ -17,6 +17,15 @@ pub struct BaseProposal {
     // pub pol_round: Round,
 }
 
+impl BaseProposal {
+    // Todo: We should be marshaling to bytes all fields here
+    //  not just the value
+    pub fn to_bytes(&self) -> [u8; size_of::<u64>()] {
+        // Serialize just the value, a u64
+        self.value.0.to_be_bytes()
+    }
+}
+
 impl malachite_common::Proposal<BaseContext> for BaseProposal {
     fn height(&self) -> BaseHeight {
         self.height

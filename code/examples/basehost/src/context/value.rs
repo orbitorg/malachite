@@ -1,7 +1,7 @@
 use std::fmt;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Ord, PartialOrd)]
-pub struct BaseValue(u64);
+pub struct BaseValue(pub u64);
 
 // Todo: Is this overkill?
 //  Seems necessary for fulfilling Vote::value().
