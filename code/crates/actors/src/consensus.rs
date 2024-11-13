@@ -213,6 +213,8 @@ where
         msg: Msg<Ctx>,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
+            Msg::GossipEvent(event) => self.handle_gossip_event(myself, state, event).await,
+
             Msg::StartHeight(height) => {
                 let validator_set = self.get_validator_set(height).await?;
 
@@ -247,137 +249,6 @@ where
                 Ok(())
             }
 
-            Msg::GossipEvent(event) => {
-                match event {
-                    GossipEvent::Listening(address) => {
-                        info!(%address, "Listening");
-                    }
-
-                    GossipEvent::PeerConnected(peer_id) => {
-                        if !state.connected_peers.insert(peer_id) {
-                            // We already saw that peer, ignoring...
-                            return Ok(());
-                        }
-
-                        info!(%peer_id, "Connected to peer");
-
-                        let validator_set = state.consensus.driver.validator_set();
-                        let connected_peers = state.connected_peers.len();
-                        let total_peers = validator_set.count() - 1;
-
-                        debug!(connected = %connected_peers, total = %total_peers, "Connected to another peer");
-
-                        self.metrics.connected_peers.inc();
-
-                        // TODO: change logic
-                        if connected_peers == total_peers {
-                            info!(count = %connected_peers, "Enough peers connected to start consensus");
-
-                            let height = state.consensus.driver.height();
-
-                            self.host.cast(HostMsg::ConsensusReady {
-                                height,
-                                consensus: myself.clone(),
-                            })?;
-                        }
-                    }
-
-                    GossipEvent::PeerDisconnected(peer_id) => {
-                        info!(%peer_id, "Disconnected from peer");
-
-                        if state.connected_peers.remove(&peer_id) {
-                            self.metrics.connected_peers.dec();
-
-                            // TODO: pause/stop consensus, if necessary
-                        }
-                    }
-
-                    GossipEvent::BlockSyncResponse(
-                        request_id,
-                        peer,
-                        blocksync::Response { height, block },
-                    ) => {
-                        debug!(%height, %request_id, "Received BlockSync response");
-
-                        let Some(block) = block else {
-                            error!(%height, %request_id, "Received empty block sync response");
-                            return Ok(());
-                        };
-
-                        if let Err(e) = self
-                            .process_input(
-                                &myself,
-                                state,
-                                ConsensusInput::ReceivedSyncedBlock(
-                                    block.block_bytes,
-                                    block.certificate,
-                                ),
-                            )
-                            .await
-                        {
-                            error!(%height, %request_id, "Error when processing synced block: {e:?}");
-
-                            if let ConsensusError::InvalidCertificate(certificate, e) = e {
-                                self.block_sync
-                                    .cast(BlockSyncMsg::InvalidCertificate(peer, certificate, e))
-                                    .map_err(|e| {
-                                        eyre!("Error when notifying BlockSync of invalid certificate: {e:?}")
-                                    })?;
-                            }
-                        }
-                    }
-
-                    GossipEvent::Vote(from, vote) => {
-                        if let Err(e) = self
-                            .process_input(&myself, state, ConsensusInput::Vote(vote))
-                            .await
-                        {
-                            error!(%from, "Error when processing vote: {e:?}");
-                        }
-                    }
-
-                    GossipEvent::Proposal(from, proposal) => {
-                        if state.consensus.params.value_payload.parts_only() {
-                            error!(%from, "Properly configured peer should never send proposal messages in BlockPart mode");
-                            return Ok(());
-                        }
-
-                        if let Err(e) = self
-                            .process_input(&myself, state, ConsensusInput::Proposal(proposal))
-                            .await
-                        {
-                            error!(%from, "Error when processing proposal: {e:?}");
-                        }
-                    }
-
-                    GossipEvent::ProposalPart(from, part) => {
-                        if state.consensus.params.value_payload.proposal_only() {
-                            error!(%from, "Properly configured peer should never send block part messages in Proposal mode");
-                            return Ok(());
-                        }
-
-                        self.host
-                            .call_and_forward(
-                                |reply_to| HostMsg::ReceivedProposalPart {
-                                    from,
-                                    part,
-                                    reply_to,
-                                },
-                                &myself,
-                                |value| Msg::ReceivedProposedValue(value),
-                                None,
-                            )
-                            .map_err(|e| {
-                                eyre!("Error when forwarding proposal parts to host: {e:?}")
-                            })?;
-                    }
-
-                    _ => {}
-                }
-
-                Ok(())
-            }
-
             Msg::TimeoutElapsed(elapsed) => {
                 let Some(timeout) = state.timers.intercept_timer_msg(elapsed) else {
                     // Timer was cancelled or already processed, ignore
@@ -397,7 +268,7 @@ where
                     .await;
 
                 if let Err(e) = result {
-                    error!("Error when processing TimeoutElapsed message: {e:?}");
+                    error!("Error when processing elapsed timeout: {e:?}");
                 }
 
                 Ok(())
@@ -409,7 +280,7 @@ where
                     .await;
 
                 if let Err(e) = result {
-                    error!("Error when processing GossipEvent message: {e:?}");
+                    error!("Error when processing proposed value: {e:?}");
                 }
 
                 Ok(())
@@ -441,6 +312,139 @@ where
                 Ok(())
             }
         }
+    }
+
+    async fn handle_gossip_event(
+        &self,
+        myself: ActorRef<Msg<Ctx>>,
+        state: &mut State<Ctx>,
+        event: GossipEvent<Ctx>,
+    ) -> Result<(), ActorProcessingErr> {
+        match event {
+            GossipEvent::Listening(address) => {
+                info!(%address, "Listening");
+            }
+
+            GossipEvent::PeerConnected(peer_id) => {
+                if !state.connected_peers.insert(peer_id) {
+                    // We already saw that peer, ignoring...
+                    return Ok(());
+                }
+
+                info!(%peer_id, "Connected to peer");
+
+                let validator_set = state.consensus.driver.validator_set();
+                let connected_peers = state.connected_peers.len();
+                let total_peers = validator_set.count() - 1;
+
+                debug!(connected = %connected_peers, total = %total_peers, "Connected to another peer");
+
+                self.metrics.connected_peers.inc();
+
+                // TODO: change logic
+                if connected_peers == total_peers {
+                    info!(count = %connected_peers, "Enough peers connected to start consensus");
+
+                    let height = state.consensus.driver.height();
+
+                    self.host.cast(HostMsg::ConsensusReady {
+                        height,
+                        consensus: myself.clone(),
+                    })?;
+                }
+            }
+
+            GossipEvent::PeerDisconnected(peer_id) => {
+                info!(%peer_id, "Disconnected from peer");
+
+                if state.connected_peers.remove(&peer_id) {
+                    self.metrics.connected_peers.dec();
+
+                    // TODO: pause/stop consensus, if necessary
+                }
+            }
+
+            GossipEvent::BlockSyncResponse(
+                request_id,
+                peer,
+                blocksync::Response { height, block },
+            ) => {
+                debug!(%height, %request_id, "Received BlockSync response");
+
+                let Some(block) = block else {
+                    error!(%height, %request_id, "Received empty block sync response");
+                    return Ok(());
+                };
+
+                if let Err(e) = self
+                    .process_input(
+                        &myself,
+                        state,
+                        ConsensusInput::ReceivedSyncedBlock(block.block_bytes, block.certificate),
+                    )
+                    .await
+                {
+                    error!(%height, %request_id, "Error when processing synced block: {e:?}");
+
+                    if let ConsensusError::InvalidCertificate(certificate, e) = e {
+                        self.block_sync
+                            .cast(BlockSyncMsg::InvalidCertificate(peer, certificate, e))
+                            .map_err(|e| {
+                                eyre!(
+                                    "Error when notifying BlockSync of invalid certificate: {e:?}"
+                                )
+                            })?;
+                    }
+                }
+            }
+
+            GossipEvent::Vote(from, vote) => {
+                if let Err(e) = self
+                    .process_input(&myself, state, ConsensusInput::Vote(vote))
+                    .await
+                {
+                    error!(%from, "Error when processing vote: {e:?}");
+                }
+            }
+
+            GossipEvent::Proposal(from, proposal) => {
+                if state.consensus.params.value_payload.parts_only() {
+                    error!(%from, "Properly configured peer should never send proposal messages in BlockPart mode");
+                    return Ok(());
+                }
+
+                if let Err(e) = self
+                    .process_input(&myself, state, ConsensusInput::Proposal(proposal))
+                    .await
+                {
+                    error!(%from, "Error when processing proposal: {e:?}");
+                }
+            }
+
+            GossipEvent::ProposalPart(from, part) => {
+                if state.consensus.params.value_payload.proposal_only() {
+                    error!(%from, "Properly configured peer should never send block part messages in Proposal mode");
+                    return Ok(());
+                }
+
+                self.host
+                    .call_and_forward(
+                        |reply_to| HostMsg::ReceivedProposalPart {
+                            from,
+                            part,
+                            reply_to,
+                        },
+                        &myself,
+                        |value| Msg::ReceivedProposedValue(value),
+                        None,
+                    )
+                    .map_err(|e| eyre!("Error when forwarding proposal parts to host: {e:?}"))?;
+            }
+
+            _ => {}
+        }
+
+        Ok(())
     }
 
     fn get_value(
