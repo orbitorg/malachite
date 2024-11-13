@@ -98,6 +98,22 @@ pub enum GossipEvent<Ctx: Context> {
     BlockSyncResponse(OutboundRequestId, PeerId, Response<Ctx>),
 }
 
+impl<Ctx: Context> GossipEvent<Ctx> {
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            GossipEvent::Listening(_) => "Listening",
+            GossipEvent::PeerConnected(_) => "PeerConnected",
+            GossipEvent::PeerDisconnected(_) => "PeerDisconnected",
+            GossipEvent::Vote(_, _) => "Vote",
+            GossipEvent::Proposal(_, _) => "Proposal",
+            GossipEvent::ProposalPart(_, _) => "ProposalPart",
+            GossipEvent::Status(_, _) => "Status",
+            GossipEvent::BlockSyncRequest(_, _, _) => "BlockSyncRequest",
+            GossipEvent::BlockSyncResponse(_, _, _) => "BlockSyncResponse",
+        }
+    }
+}
+
 pub enum State<Ctx: Context> {
     Stopped,
     Running {

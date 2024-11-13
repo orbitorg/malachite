@@ -1,16 +1,18 @@
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use derive_where::derive_where;
 use eyre::eyre;
 use libp2p::PeerId;
-use malachite_blocksync::SyncedBlock;
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
 use tokio::sync::broadcast;
 use tokio::time::Instant;
 use tracing::{debug, error, info, warn};
 
 use malachite_blocksync as blocksync;
+use malachite_blocksync::SyncedBlock;
 use malachite_common::{
     CommitCertificate, Context, Round, SignedExtension, Timeout, TimeoutStep, ValidatorSet,
 };
@@ -49,6 +51,7 @@ where
 
 pub type ConsensusMsg<Ctx> = Msg<Ctx>;
 
+#[derive_where(Debug)]
 pub enum Msg<Ctx: Context> {
     /// Start consensus for the given height
     StartHeight(Ctx::Height),
@@ -70,6 +73,20 @@ pub enum Msg<Ctx: Context> {
 
     /// Get the status of the consensus state machine
     GetStatus(RpcReplyPort<Status<Ctx>>),
+}
+
+impl<Ctx: Context> Msg<Ctx> {
+    pub fn msg_type(&self) -> Cow<'static, str> {
+        match self {
+            Msg::GossipEvent(event) => format!("GossipEvent({})", event.event_type()).into(),
+            Msg::StartHeight(_) => "StartHeight".into(),
+            Msg::TimeoutElapsed(_) => "TimeoutElapsed".into(),
+            Msg::ProposeValue(_, _, _, _) => "ProposeValue".into(),
+            Msg::ReceivedProposedValue(_) => "ReceivedProposedValue".into(),
+            Msg::ReplayBlock(_, _) => "ReplayBlock".into(),
+            Msg::GetStatus(_) => "GetStatus".into(),
+        }
+    }
 }
 
 type ConsensusInput<Ctx> = malachite_consensus::Input<Ctx>;
@@ -115,7 +132,24 @@ impl Timeouts {
     }
 }
 
+/// The various phases that consensus can be in.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+enum Phase {
+    /// Consensus has not started yet
+    #[default]
+    Unstarted,
+
+    /// Consensus is replaying blocks
+    Replaying,
+
+    /// Consensus is running
+    Running,
+}
+
 pub struct State<Ctx: Context> {
+    /// The phase of consensus we are in
+    phase: Phase,
+
     /// Scheduler for timers
     timers: Timers<Ctx>,
 
@@ -188,14 +222,6 @@ where
         state: &mut State<Ctx>,
         input: ConsensusInput<Ctx>,
     ) -> Result<(), ConsensusError<Ctx>> {
-        // Notify the BlockSync actor that we have started a new height
-        if let ConsensusInput::StartHeight(height, _) = &input {
-            let _ = self
-                .block_sync
-                .cast(BlockSyncMsg::StartHeight(*height))
-                .inspect_err(|e| error!("Error when sending start height to BlockSync: {e:?}"));
-        }
-
         malachite_consensus::process!(
             input: input,
             state: &mut state.consensus,
@@ -212,10 +238,16 @@ where
         state: &mut State<Ctx>,
         msg: Msg<Ctx>,
     ) -> Result<(), ActorProcessingErr> {
-        match msg {
-            Msg::GossipEvent(event) => self.handle_gossip_event(myself, state, event).await,
+        use Phase::{Replaying, Running, Unstarted};
 
-            Msg::StartHeight(height) => {
+        match (state.phase, msg) {
+            (Unstarted | Running, Msg::GossipEvent(event)) => {
+                self.handle_gossip_event(myself, state, event).await
+            }
+
+            (Unstarted | Running, Msg::StartHeight(height)) => {
+                state.phase = Running;
+
                 let validator_set = self.get_validator_set(height).await?;
 
                 let result = self
@@ -227,13 +259,18 @@ where
                     .await;
 
                 if let Err(e) = result {
-                    error!("Error when starting height {height}: {e:?}");
+                    error!("Error when starting height {height}: {e}");
+                }
+
+                // Notify BlockSync that we have started a new height
+                if let Err(e) = self.block_sync.cast(BlockSyncMsg::StartHeight(height)) {
+                    error!("Failed to notify BlockSync that consensus started a new height: {e}");
                 }
 
                 Ok(())
             }
 
-            Msg::ProposeValue(height, round, value, extension) => {
+            (Running, Msg::ProposeValue(height, round, value, extension)) => {
                 let result = self
                     .process_input(
                         &myself,
@@ -249,7 +286,7 @@ where
                 Ok(())
             }
 
-            Msg::TimeoutElapsed(elapsed) => {
+            (Running, Msg::TimeoutElapsed(elapsed)) => {
                 let Some(timeout) = state.timers.intercept_timer_msg(elapsed) else {
                     // Timer was cancelled or already processed, ignore
                     return Ok(());
@@ -274,7 +311,7 @@ where
                 Ok(())
             }
 
-            Msg::ReceivedProposedValue(value) => {
+            (Running, Msg::ReceivedProposedValue(value)) => {
                 let result = self
                     .process_input(&myself, state, ConsensusInput::ReceivedProposedValue(value))
                     .await;
@@ -286,7 +323,9 @@ where
                 Ok(())
             }
 
-            Msg::ReplayBlock(height, block) => {
+            (Unstarted | Running | Replaying, Msg::ReplayBlock(height, block)) => {
+                state.phase = Replaying;
+
                 if let Err(e) = self
                     .process_input(
                         &myself,
@@ -301,13 +340,20 @@ where
                 Ok(())
             }
 
-            Msg::GetStatus(reply_to) => {
+            (Running, Msg::GetStatus(reply_to)) => {
                 let earliest_block_height = self.get_earliest_block_height().await?;
                 let status = Status::new(state.consensus.driver.height(), earliest_block_height);
 
                 if let Err(e) = reply_to.send(status) {
                     error!("Error when replying to GetStatus message: {e:?}");
                 }
+
+                Ok(())
+            }
+
+            (phase, msg) => {
+                // TODO: Switch to trace level so we don't spam the logs
+                warn!(?phase, msg = %msg.msg_type(), "Ignoring message");
 
                 Ok(())
             }
@@ -665,6 +711,7 @@ where
             .cast(GossipConsensusMsg::Subscribe(forward))?;
 
         Ok(State {
+            phase: Phase::Unstarted,
             timers: Timers::new(myself),
             timeouts: Timeouts::new(self.timeout_config),
             consensus: ConsensusState::new(self.ctx.clone(), self.params.clone()),
