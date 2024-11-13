@@ -2,14 +2,14 @@
 /// a Malachite-based decentralized system
 use rand::seq::SliceRandom;
 use std::collections::{HashMap, VecDeque};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use malachite_common::SignedMessage;
-use malachite_consensus::Input::{ProposeValue, StartHeight};
+use malachite_common::{SignedMessage, Timeout, TimeoutStep, Validity};
 use malachite_consensus::{
-    ConsensusMsg, Effect, Error, Input, Params, Resume, SignedConsensusMsg, State,
+    ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State,
 };
 use malachite_metrics::Metrics;
 
@@ -19,6 +19,7 @@ use crate::context::height::BaseHeight;
 use crate::context::peer_set::BasePeerSet;
 use crate::context::value::BaseValue;
 use crate::context::BaseContext;
+use crate::decision::Decision;
 
 #[allow(dead_code)]
 pub struct Network {
@@ -35,10 +36,12 @@ pub struct Network {
     metrics: Vec<Metrics>,
 
     inboxes: HashMap<String, VecDeque<Input<BaseContext>>>,
+
+    tx_decision: Sender<Decision>,
 }
 
 impl Network {
-    pub fn new(size: u32) -> (Network, Vec<State<BaseContext>>) {
+    pub fn new(size: u32) -> (Network, Vec<State<BaseContext>>, Receiver<Decision>) {
         let mut states = vec![];
         let mut params = vec![];
 
@@ -66,19 +69,24 @@ impl Network {
             states.push(s);
         }
 
+        // Channels on which we'll receive the decided heights
+        let (tx, rx) = mpsc::channel();
+
         (
             Network {
                 peers: val_set,
                 params,
                 metrics: vec![],         // Initialize during bootstrap
                 inboxes: HashMap::new(), // Initialize during bootstrap
+                tx_decision: tx,         // Initialize later
             },
             states,
+            rx,
         )
     }
 
     // Orchestrate the execution of this network across all peers
-    pub fn run(&mut self, _tx: Sender<BaseHeight>, states: &mut Vec<State<BaseContext>>) {
+    pub fn run(&mut self, states: &mut Vec<State<BaseContext>>) {
         // Todo: Potentially introduce an intermediate abstraction
         //     layer to handle timeouts
 
@@ -91,24 +99,14 @@ impl Network {
             // Pick a random peer and do 1 step
             self.step_arbitrary_peer(states);
 
-            // Send the decisions to the caller
-            // tx.send(BaseHeight::new(1)).unwrap();
-            thread::sleep(Duration::from_secs(1));
+            // Simulate network and execution delays
+            thread::sleep(Duration::from_millis(200));
         }
     }
 
     // Sends a [`Input::Start`] to each peer
     fn bootstrap_network(&mut self, states: &mut Vec<State<BaseContext>>) {
-        // The starting validator set
-        let val_set = self
-            .params
-            .get(0)
-            .expect("no params found")
-            .initial_validator_set
-            .clone();
-        let height = BaseHeight::default();
-
-        let input: Input<BaseContext> = StartHeight(height, val_set);
+        let input = self.start_new_height(BaseHeight::default());
 
         let mut position = 0;
         for peer_state in states.iter_mut() {
@@ -216,8 +214,17 @@ impl Network {
 
                 Ok(Resume::Continue)
             }
-            Effect::ScheduleTimeout(_) => {
-                println!("\t{}** ScheduleTimeout", peer_id);
+            Effect::ScheduleTimeout(t) => {
+                println!("\t{}** ScheduleTimeout {}", peer_id, t);
+
+                // Special case to handle: If it's a timeout for commit step
+                let Timeout { round: _, step } = t;
+                if step == TimeoutStep::Commit {
+                    // We handle this timeout instantly: Signal that the timeout elapsed
+                    // This will prompt consensus to provide the effect `Decide`
+                    let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
+                    ix.push_back(Input::TimeoutElapsed(t));
+                }
 
                 Ok(Resume::Continue)
             }
@@ -237,10 +244,25 @@ impl Network {
                     // Todo: Any way to avoid clones below?
                     match v {
                         SignedConsensusMsg::Vote(ref sv) => {
+                            // Todo: Do we need to broadcast to the sender? double check w/ RR & AZ
                             ix.push_back(Input::Vote(sv.clone()));
                         }
                         SignedConsensusMsg::Proposal(ref sp) => {
                             ix.push_back(Input::Proposal(sp.clone()));
+                            // Normally, this input would be triggered by a separate message, not
+                            // by the `Input::Proposal` message.
+                            // But we short-circuit here, and instead of using `ProposalPart` we
+                            // directly trigger the input.
+                            // Todo: Not sure this is right, double check w/ RR & AZ
+                            // Todo: This was not intuitive to find (source of bug/confusion)
+                            ix.push_back(Input::ReceivedProposedValue(ProposedValue {
+                                height: sp.height,
+                                round: sp.round,
+                                validator_address: sp.proposer.clone(),
+                                value: sp.value,
+                                validity: Validity::Valid,
+                                extension: None,
+                            }));
                         }
                     }
                 }
@@ -255,7 +277,7 @@ impl Network {
                 // in the form of a `ProposeValue` variant.
                 // Register this input in the inbox of the current validator.
                 let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
-                ix.push_back(ProposeValue(h, r, BaseValue(786), None));
+                ix.push_back(Input::ProposeValue(h, r, BaseValue(786), None));
 
                 Ok(Resume::Continue)
             }
@@ -277,13 +299,41 @@ impl Network {
 
                 Ok(Resume::SignatureValidity(true))
             }
-            Effect::Decide { .. } => {
-                panic!("Decide not impl")
+            Effect::Decide {
+                proposal,
+                commits: _,
+            } => {
+                // Let the top-level application know about the decision
+                self.tx_decision
+                    .send(Decision {
+                        peer: BaseAddress(peer_id),
+                        value: proposal.value,
+                    })
+                    .expect("unable to send a decision");
+
+                // Proceed to the next height
+                let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
+                ix.push_back(Input::StartHeight(h, r, BaseValue(786), None));
+
+                Ok(Resume::Continue)
             }
             Effect::SyncedBlock { .. } => {
                 panic!("SyncedBlock not impl")
             }
         }
+    }
+
+    // Convenience function
+    fn start_new_height(&self, height: BaseHeight) -> Input<BaseContext> {
+        // The starting validator set
+        let val_set = self
+            .params
+            .get(0)
+            .expect("no params found")
+            .initial_validator_set
+            .clone();
+
+        Input::StartHeight(height, val_set)
     }
 }
 
