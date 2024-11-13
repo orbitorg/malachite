@@ -4,7 +4,7 @@ use malachite_common::Height;
 
 /// Base implementation of a Height
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BaseHeight(u64);
+pub struct BaseHeight(pub u64);
 
 impl BaseHeight {
     #[allow(dead_code)]

@@ -1,13 +1,16 @@
-use rand::seq::SliceRandom;
-use std::collections::HashMap;
 /// A network is a set of peers, comprising an instance of
 /// a Malachite-based decentralized system
+use rand::seq::SliceRandom;
+use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
 
+use malachite_common::SignedMessage;
 use malachite_consensus::Input::{ProposeValue, StartHeight};
-use malachite_consensus::{Effect, Error, Input, Params, Resume, SignedConsensusMsg, State};
+use malachite_consensus::{
+    ConsensusMsg, Effect, Error, Input, Params, Resume, SignedConsensusMsg, State,
+};
 use malachite_metrics::Metrics;
 
 use crate::common;
@@ -79,7 +82,9 @@ impl Network {
         // Todo: Potentially introduce an intermediate abstraction
         //     layer to handle timeouts
 
+        println!("bootstrapping network");
         self.bootstrap_network(states);
+        println!("bootstrap done");
 
         // Busy loop to orchestrate among peers
         loop {
@@ -157,7 +162,6 @@ impl Network {
             .choose(&mut rand::thread_rng())
             .expect("the network has no peers")
             .clone();
-        println!("selected peer {}", ps.address.0);
 
         let state = states.get_mut(ps.address.as_position()).unwrap();
         // Todo: Fix the clone
@@ -222,12 +226,15 @@ impl Network {
             Effect::StartRound(_, _, _) => {
                 println!("\t{}** StartRound", peer_id);
 
+                // Nothing in particular to keep track of
+
                 Ok(Resume::Continue)
             }
             Effect::Broadcast(v) => {
-                println!("\t{}** Broadcast", peer_id);
+                println!("\t{}** Broadcast {}", peer_id, pretty_broadcast(&v));
 
                 // Push the signed consensus message into the inbox of all peers
+                // This is all that broadcast entails
                 for (_, ix) in self.inbox.iter_mut() {
                     // Todo: Any way to avoid clones below?
                     match v {
@@ -257,8 +264,20 @@ impl Network {
             Effect::GetValidatorSet(_) => {
                 panic!("GetValidatorSet not impl")
             }
-            Effect::VerifySignature(_, _) => {
-                panic!("VerifySignature not impl")
+            Effect::VerifySignature(m, _) => {
+                println!(
+                    "\t{}** VerifySignature {}",
+                    peer_id,
+                    pretty_verify_signature(m)
+                );
+
+                // We should implement this for performance reasons and to reflect realistic
+                // conditions.
+                // Though in practice, it does not make any difference given the
+                // simulated conditions of the local testnet.
+                // Todo: signature verification for later
+
+                Ok(Resume::SignatureValidity(true))
             }
             Effect::Decide { .. } => {
                 panic!("Decide not impl")
@@ -267,5 +286,19 @@ impl Network {
                 panic!("SyncedBlock not impl")
             }
         }
+    }
+}
+
+fn pretty_broadcast(v: &SignedConsensusMsg<BaseContext>) -> String {
+    match v {
+        SignedConsensusMsg::Vote(ref sv) => sv.to_string(),
+        SignedConsensusMsg::Proposal(ref sp) => sp.to_string(),
+    }
+}
+
+fn pretty_verify_signature(m: SignedMessage<BaseContext, ConsensusMsg<BaseContext>>) -> String {
+    match m.message {
+        ConsensusMsg::Vote(v) => v.to_string(),
+        ConsensusMsg::Proposal(p) => p.to_string(),
     }
 }

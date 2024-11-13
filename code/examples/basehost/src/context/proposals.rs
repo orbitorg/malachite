@@ -1,3 +1,5 @@
+use std::fmt;
+
 use malachite_common::Round;
 
 use crate::context::address::BaseAddress;
@@ -26,6 +28,16 @@ impl BaseProposal {
     }
 }
 
+impl fmt::Display for BaseProposal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Proposal / {} / {} / {:?} / <- {}",
+            self.height, self.round, self.value, self.proposer
+        )
+    }
+}
+
 impl malachite_common::Proposal<BaseContext> for BaseProposal {
     fn height(&self) -> BaseHeight {
         self.height
@@ -49,7 +61,8 @@ impl malachite_common::Proposal<BaseContext> for BaseProposal {
     // Todo: Seems like exactly the kind of stuff we can
     //  abstract in a "base" layer of primitives ?
     fn pol_round(&self) -> Round {
-        unimplemented!()
+        // We assume we never need to go into round > 0
+        Round::Nil
     }
 
     fn validator_address(&self) -> &BaseAddress {

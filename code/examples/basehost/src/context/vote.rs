@@ -1,4 +1,5 @@
 use malachite_common::{Extension, NilOrVal, Round, VoteType};
+use std::fmt;
 
 use crate::context::address::BaseAddress;
 use crate::context::height::BaseHeight;
@@ -12,6 +13,24 @@ pub struct BaseVote {
     pub value_id: NilOrVal<BaseValueId>,
     pub round: Round,
     pub voter: BaseAddress,
+}
+
+impl BaseVote {
+    // TODO: Similar to how we do it for `BaseProposal`, serialize only
+    //  the height here as a quick prototype
+    pub fn to_bytes(&self) -> [u8; size_of::<u64>()] {
+        self.height.0.to_be_bytes()
+    }
+}
+
+impl fmt::Display for BaseVote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:?} / {} / {} / {:?} / <- {}",
+            self.vote_type, self.height, self.round, self.value_id, self.voter
+        )
+    }
 }
 
 impl malachite_common::Vote<BaseContext> for BaseVote {

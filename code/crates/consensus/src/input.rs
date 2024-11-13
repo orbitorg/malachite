@@ -31,6 +31,8 @@ where
 
     /// Received the full proposed value corresponding to a proposal.
     /// The origin denotes whether the value was received via consensus or Sync.
+    /// Note: All peers -- except the proposer -- have to provide this input
+    ///     for the consensus state machine to progress.
     ProposedValue(ProposedValue<Ctx>, ValueOrigin),
 
     /// Received a commit certificate from Sync
