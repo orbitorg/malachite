@@ -245,7 +245,7 @@ where
                 self.handle_gossip_event(myself, state, event).await
             }
 
-            (Unstarted | Running, Msg::StartHeight(height)) => {
+            (Unstarted | Running | Replaying, Msg::StartHeight(height)) => {
                 state.phase = Running;
 
                 let validator_set = self.get_validator_set(height).await?;
