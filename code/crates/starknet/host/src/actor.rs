@@ -302,7 +302,10 @@ impl StarknetHost {
                 certificate: block.certificate,
             };
 
-            consensus.cast(ConsensusMsg::ReplayBlock(height, block))?;
+            // FIXME: Error handling
+            consensus
+                .call(|done| ConsensusMsg::ReplayBlock(height, block, done), None)
+                .await?;
         } else {
             error!(%height, "No block found to replay");
         }

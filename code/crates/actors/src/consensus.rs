@@ -69,7 +69,7 @@ pub enum Msg<Ctx: Context> {
     ReceivedProposedValue(ProposedValue<Ctx>),
 
     /// TODO
-    ReplayBlock(Ctx::Height, SyncedBlock<Ctx>),
+    ReplayBlock(Ctx::Height, SyncedBlock<Ctx>, RpcReplyPort<()>),
 
     /// Get the status of the consensus state machine
     GetStatus(RpcReplyPort<Status<Ctx>>),
@@ -83,7 +83,7 @@ impl<Ctx: Context> Msg<Ctx> {
             Msg::TimeoutElapsed(_) => "TimeoutElapsed".into(),
             Msg::ProposeValue(_, _, _, _) => "ProposeValue".into(),
             Msg::ReceivedProposedValue(_) => "ReceivedProposedValue".into(),
-            Msg::ReplayBlock(_, _) => "ReplayBlock".into(),
+            Msg::ReplayBlock(_, _, _) => "ReplayBlock".into(),
             Msg::GetStatus(_) => "GetStatus".into(),
         }
     }
@@ -323,7 +323,7 @@ where
                 Ok(())
             }
 
-            (Unstarted | Running | Replaying, Msg::ReplayBlock(height, block)) => {
+            (Unstarted | Running | Replaying, Msg::ReplayBlock(height, block, done)) => {
                 state.phase = Replaying;
 
                 if let Err(e) = self
@@ -335,7 +335,10 @@ where
                     .await
                 {
                     error!(%height, "Error when processing synced block: {e:?}");
+                    return Ok(());
                 }
+
+                done.send(())?;
 
                 Ok(())
             }
