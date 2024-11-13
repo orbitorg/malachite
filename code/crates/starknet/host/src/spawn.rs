@@ -119,6 +119,7 @@ async fn spawn_block_sync_actor(
     registry: &SharedRegistry,
 ) -> BlockSyncRef<MockContext> {
     let params = BlockSyncParams {
+        enabled: config.enabled,
         status_update_interval: config.status_update_interval,
         request_timeout: config.request_timeout,
     };

@@ -79,6 +79,7 @@ impl<Ctx: Context> From<TimeoutElapsed<Timeout>> for Msg<Ctx> {
 
 #[derive(Debug)]
 pub struct Params {
+    pub enabled: bool,
     pub status_update_interval: Duration,
     pub request_timeout: Duration,
 }
@@ -86,6 +87,7 @@ pub struct Params {
 impl Default for Params {
     fn default() -> Self {
         Self {
+            enabled: true,
             status_update_interval: Duration::from_secs(10),
             request_timeout: Duration::from_secs(10),
         }
@@ -365,6 +367,10 @@ where
             || Msg::Tick,
         ));
 
+        if !self.params.enabled {
+            ticker.abort();
+        }
+
         let rng = Box::new(rand::rngs::StdRng::from_entropy());
 
         Ok(State {
@@ -382,6 +388,11 @@ where
         msg: Self::Msg,
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
+        if !self.params.enabled {
+            warn!("Block sync is disabled");
+            return Ok(());
+        }
+
         if let Err(e) = self.handle_msg(myself, msg, state).await {
             error!("Error handling message: {e:?}");
         }
@@ -395,6 +406,7 @@ where
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         state.ticker.abort();
+
         Ok(())
     }
 }
