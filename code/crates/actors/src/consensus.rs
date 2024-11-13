@@ -227,7 +227,7 @@ where
             state: &mut state.consensus,
             metrics: &self.metrics,
             with: effect => {
-                self.handle_effect(myself, &mut state.timers, &mut state.timeouts, effect).await
+                self.handle_effect(myself, state.phase, &mut state.timers, &mut state.timeouts, effect).await
             }
         )
     }
@@ -551,6 +551,7 @@ where
     async fn handle_effect(
         &self,
         myself: &ActorRef<Msg<Ctx>>,
+        phase: Phase,
         timers: &mut Timers<Ctx>,
         timeouts: &mut Timeouts,
         effect: Effect<Ctx>,
@@ -673,6 +674,11 @@ where
                 validator_address,
                 block_bytes,
             } => {
+                if phase == Phase::Replaying {
+                    warn!(%height, "Ignoring synced block while replaying blocks");
+                    return Ok(Resume::Continue);
+                }
+
                 debug!(%height, "Consensus received synced block, sending to host");
 
                 self.host.call_and_forward(
