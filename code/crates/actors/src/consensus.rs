@@ -42,7 +42,7 @@ where
     timeout_config: TimeoutConfig,
     gossip_consensus: GossipConsensusRef<Ctx>,
     host: HostRef<Ctx>,
-    block_sync: Option<BlockSyncRef<Ctx>>,
+    block_sync: BlockSyncRef<Ctx>,
     metrics: Metrics,
     tx_decision: Option<TxDecision<Ctx>>,
 }
@@ -140,7 +140,7 @@ where
         timeout_config: TimeoutConfig,
         gossip_consensus: GossipConsensusRef<Ctx>,
         host: HostRef<Ctx>,
-        block_sync: Option<BlockSyncRef<Ctx>>,
+        block_sync: BlockSyncRef<Ctx>,
         metrics: Metrics,
         tx_decision: Option<TxDecision<Ctx>>,
     ) -> Self {
@@ -163,7 +163,7 @@ where
         timeout_config: TimeoutConfig,
         gossip_consensus: GossipConsensusRef<Ctx>,
         host: HostRef<Ctx>,
-        block_sync: Option<BlockSyncRef<Ctx>>,
+        block_sync: BlockSyncRef<Ctx>,
         metrics: Metrics,
         tx_decision: Option<TxDecision<Ctx>>,
     ) -> Result<ActorRef<Msg<Ctx>>, ractor::SpawnErr> {
@@ -189,10 +189,9 @@ where
         input: ConsensusInput<Ctx>,
     ) -> Result<(), ConsensusError<Ctx>> {
         // Notify the BlockSync actor that we have started a new height
-        if let (ConsensusInput::StartHeight(height, _), Some(block_sync)) =
-            (&input, &self.block_sync)
-        {
-            let _ = block_sync
+        if let ConsensusInput::StartHeight(height, _) = &input {
+            let _ = self
+                .block_sync
                 .cast(BlockSyncMsg::StartHeight(*height))
                 .inspect_err(|e| error!("Error when sending start height to BlockSync: {e:?}"));
         }
@@ -280,18 +279,6 @@ where
                                 height,
                                 consensus: myself.clone(),
                             })?;
-
-                            // let result = self
-                            //     .process_input(
-                            //         &myself,
-                            //         state,
-                            //         ConsensusInput::StartHeight(height, validator_set.clone()),
-                            //     )
-                            //     .await;
-                            //
-                            // if let Err(e) = result {
-                            //     error!("Error when starting height {height}: {e:?}");
-                            // }
                         }
                     }
 
@@ -330,13 +317,8 @@ where
                         {
                             error!(%height, %request_id, "Error when processing synced block: {e:?}");
 
-                            let Some(block_sync) = self.block_sync.as_ref() else {
-                                warn!("Received BlockSync response but BlockSync actor is not available");
-                                return Ok(());
-                            };
-
                             if let ConsensusError::InvalidCertificate(certificate, e) = e {
-                                block_sync
+                                self.block_sync
                                     .cast(BlockSyncMsg::InvalidCertificate(peer, certificate, e))
                                     .map_err(|e| {
                                         eyre!("Error when notifying BlockSync of invalid certificate: {e:?}")
@@ -625,13 +607,9 @@ where
                     })
                     .map_err(|e| eyre!("Error when sending decided value to host: {e:?}"))?;
 
-                if let Some(block_sync) = &self.block_sync {
-                    block_sync
-                        .cast(BlockSyncMsg::Decided(height))
-                        .map_err(|e| {
-                            eyre!("Error when sending decided height to blocksync: {e:?}")
-                        })?;
-                }
+                self.block_sync
+                    .cast(BlockSyncMsg::Decided(height))
+                    .map_err(|e| eyre!("Error when sending decided height to blocksync: {e:?}"))?;
 
                 Ok(Resume::Continue)
             }

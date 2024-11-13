@@ -19,7 +19,7 @@ pub struct Node<Ctx: Context> {
     gossip_consensus: GossipConsensusRef<Ctx>,
     consensus: ConsensusRef<Ctx>,
     gossip_mempool: GossipMempoolRef,
-    block_sync: Option<BlockSyncRef<Ctx>>,
+    block_sync: BlockSyncRef<Ctx>,
     mempool: ActorCell,
     host: HostRef<Ctx>,
     start_height: Ctx::Height,
@@ -35,7 +35,7 @@ where
         gossip_consensus: GossipConsensusRef<Ctx>,
         consensus: ConsensusRef<Ctx>,
         gossip_mempool: GossipMempoolRef,
-        block_sync: Option<BlockSyncRef<Ctx>>,
+        block_sync: BlockSyncRef<Ctx>,
         mempool: ActorCell,
         host: HostRef<Ctx>,
         start_height: Ctx::Height,
@@ -77,10 +77,7 @@ where
         self.mempool.link(myself.get_cell());
         self.host.link(myself.get_cell());
         self.gossip_mempool.link(myself.get_cell());
-
-        if let Some(actor) = &self.block_sync {
-            actor.link(myself.get_cell());
-        }
+        self.block_sync.link(myself.get_cell());
 
         Ok(())
     }
