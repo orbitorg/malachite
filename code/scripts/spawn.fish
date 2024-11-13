@@ -8,7 +8,7 @@ set -x MALACHITE__CONSENSUS__TIMEOUT_PRECOMMIT "3s"
 set -x MALACHITE__CONSENSUS__TIMEOUT_COMMIT "0s"
 set -x MALACHITE__MEMPOOL__MAX_TX_COUNT 1000
 set -x MALACHITE__MEMPOOL__GOSSIP_BATCH_SIZE 0
-set -x MALACHITE__TEST__TX_SIZE "10 KiB"
+set -x MALACHITE__TEST__TX_SIZE "1 KiB"
 set -x MALACHITE__TEST__TXS_PER_PART 1024
 set -x MALACHITE__TEST__TIME_ALLOWANCE_FACTOR 0.5
 set -x MALACHITE__TEST__EXEC_TIME_PER_TX "1ms"
@@ -23,10 +23,10 @@ set -x MALACHITE__BLOCKSYNC__REQUEST_TIMEOUT "30s"
 # - the home directory for the nodes configuration folders
 
 function help
-    echo "Usage: spawn.fish [--help] --nodes NODES_COUNT --home NODES_HOME [--app APP_BINARY] [--profile=PROFILE|--debug] [--lldb]"
+    echo "Usage: spawn.fish [--help] --nodes NODES_COUNT --home NODES_HOME [--app APP_BINARY] [--no-reset] [--profile=PROFILE|--debug] [--lldb]"
 end
 
-argparse -n spawn.fish help 'nodes=' 'home=' 'app=' 'profile=' 'debug' -- $argv
+argparse -n spawn.fish help 'nodes=' 'home=' 'app=' 'no-reset' 'profile=' 'debug' 'lldb' -- $argv
 or return
 
 if set -ql _flag_help
@@ -51,9 +51,15 @@ set lldb false
 set build_profile release
 set build_folder release
 set profile_template (string replace -r '^$' 'time' -- $_flag_profile)
+set no_reset false
+
 
 if set -q _flag_app
     set app_name $_flag_app
+end
+
+if set -q _flag_no_reset
+    set no_reset true
 end
 
 if set -q _flag_profile
@@ -86,13 +92,17 @@ set NODES_HOME  $_flag_home
 for NODE in (seq 0 $(math $NODES_COUNT - 1))
     set NODE_HOME "$NODES_HOME/$NODE"
 
-    # rm -rf "$NODE_HOME/db"
     rm -rf "$NODE_HOME/logs"
-    rm -rf "$NODE_HOME/traces"
-
-    # mkdir -p "$NODE_HOME/db"
     mkdir -p "$NODE_HOME/logs"
+
+    rm -rf "$NODE_HOME/traces"
     mkdir -p "$NODE_HOME/traces"
+
+    if ! $no_reset
+        echo "[Node $NODE] Resetting database"
+        rm -rf "$NODE_HOME/db"
+        mkdir -p "$NODE_HOME/db"
+    end
 
     set pane $(tmux new-window -P -n "node-$NODE" "$(which fish)")
 
