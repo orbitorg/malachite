@@ -7,8 +7,10 @@ pub async fn ticker<Msg>(interval: Duration, target: ActorRef<Msg>, msg: impl Fn
 where
     Msg: Message,
 {
+    let mut interval = tokio::time::interval(interval);
+
     loop {
-        tokio::time::sleep(interval).await;
+        interval.tick().await;
 
         if let Err(e) = target.cast(msg()) {
             tracing::error!(?e, ?target, "Failed to send tick message");
