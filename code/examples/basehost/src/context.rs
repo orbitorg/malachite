@@ -3,6 +3,7 @@ use rand::SeedableRng;
 
 use malachite_common::{
     Context, NilOrVal, PublicKey, Round, Signature, SignedMessage, SignedProposal, ValueId,
+    VoteType,
 };
 use malachite_test::{Ed25519, PrivateKey};
 
@@ -23,7 +24,6 @@ pub mod proposals;
 pub mod value;
 pub mod vote;
 
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct BaseContext {
     private_key: PrivateKey,
@@ -69,7 +69,6 @@ impl Context for BaseContext {
         round: Round,
     ) -> &'a Self::Validator {
         // Keep it simple, the proposer is always the same peer
-        println!("Selecting proposer at index 0");
         validator_set
             .peers
             .get(0)
@@ -77,7 +76,9 @@ impl Context for BaseContext {
     }
 
     fn sign_vote(&self, vote: Self::Vote) -> SignedMessage<Self, Self::Vote> {
-        todo!()
+        use signature::Signer;
+        let signature = self.private_key.sign(&vote.to_bytes());
+        SignedMessage::new(vote, signature)
     }
 
     fn verify_signed_vote(
@@ -141,7 +142,13 @@ impl Context for BaseContext {
         value_id: NilOrVal<ValueId<Self>>,
         address: Self::Address,
     ) -> Self::Vote {
-        todo!()
+        BaseVote {
+            vote_type: VoteType::Prevote,
+            height,
+            value_id,
+            round,
+            voter: address,
+        }
     }
 
     fn new_precommit(

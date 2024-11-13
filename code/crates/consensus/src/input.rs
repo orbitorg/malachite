@@ -29,6 +29,8 @@ where
     TimeoutElapsed(Timeout),
 
     /// The value corresponding to a proposal has been received
+    /// Note: All peers -- except the proposer -- have to provide this input
+    ///     for the consensus state machine to progress. 
     ReceivedProposedValue(ProposedValue<Ctx>),
 
     /// A block received via BlockSync

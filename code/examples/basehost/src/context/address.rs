@@ -26,6 +26,6 @@ impl Address for BaseAddress {}
 
 impl fmt::Display for BaseAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "base addr {}", self.0)
+        write!(f, "peer {}", self.0)
     }
 }
