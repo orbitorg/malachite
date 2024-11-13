@@ -157,6 +157,12 @@ impl Context for BaseContext {
         value_id: NilOrVal<ValueId<Self>>,
         address: Self::Address,
     ) -> Self::Vote {
-        todo!()
+        BaseVote {
+            vote_type: VoteType::Precommit,
+            height,
+            value_id,
+            round,
+            voter: address,
+        }
     }
 }
