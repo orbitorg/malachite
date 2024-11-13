@@ -1,7 +1,7 @@
 /// A network is a set of peers, comprising an instance of
 /// a Malachite-based decentralized system
 use rand::seq::SliceRandom;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
@@ -34,7 +34,7 @@ pub struct Network {
 
     metrics: Vec<Metrics>,
 
-    inbox: HashMap<String, Vec<Input<BaseContext>>>,
+    inboxes: HashMap<String, VecDeque<Input<BaseContext>>>,
 }
 
 impl Network {
@@ -70,8 +70,8 @@ impl Network {
             Network {
                 peers: val_set,
                 params,
-                metrics: vec![],       // Initialize during bootstrap
-                inbox: HashMap::new(), // Initialize during bootstrap
+                metrics: vec![],         // Initialize during bootstrap
+                inboxes: HashMap::new(), // Initialize during bootstrap
             },
             states,
         )
@@ -123,7 +123,7 @@ impl Network {
             let metrics = common::new_metrics();
 
             // Initialize the inbox
-            self.inbox.insert(position.to_string(), vec![]);
+            self.inboxes.insert(position.to_string(), VecDeque::new());
 
             // Kick off consensus at this peer
             self.process_peer(input.clone(), &peer_params, &metrics, peer_state)
@@ -180,16 +180,14 @@ impl Network {
         // Select the inbox of this peer, consume a message, and process it
         // as input for taking the next step
         let ix = self
-            .inbox
+            .inboxes
             .get_mut(&position)
             .expect("inbox for peer not found");
-        if !ix.is_empty() {
-            let msg = ix.pop().expect("message not found in the inbox");
-
+        if let Some(msg) = ix.pop_front() {
             self.process_peer(msg, ps, metrics, peer_state)
                 .expect("unknown error during step_peer");
         } else {
-            println!("the inbox for {} was empty", position);
+            println!(".. empty inbox @ {}", position);
         }
     }
 
@@ -235,14 +233,14 @@ impl Network {
 
                 // Push the signed consensus message into the inbox of all peers
                 // This is all that broadcast entails
-                for (_, ix) in self.inbox.iter_mut() {
+                for (_, ix) in self.inboxes.iter_mut() {
                     // Todo: Any way to avoid clones below?
                     match v {
                         SignedConsensusMsg::Vote(ref sv) => {
-                            ix.push(Input::Vote(sv.clone()));
+                            ix.push_back(Input::Vote(sv.clone()));
                         }
                         SignedConsensusMsg::Proposal(ref sp) => {
-                            ix.push(Input::Proposal(sp.clone()));
+                            ix.push_back(Input::Proposal(sp.clone()));
                         }
                     }
                 }
@@ -256,8 +254,8 @@ impl Network {
                 // The app creates a value and provides it as input to Malachite
                 // in the form of a `ProposeValue` variant.
                 // Register this input in the inbox of the current validator.
-                let ix = self.inbox.get_mut(&peer_id).expect("inbox not found");
-                ix.push(ProposeValue(h, r, BaseValue(786), None));
+                let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
+                ix.push_back(ProposeValue(h, r, BaseValue(786), None));
 
                 Ok(Resume::Continue)
             }
