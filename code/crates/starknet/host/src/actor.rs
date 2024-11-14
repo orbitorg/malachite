@@ -658,19 +658,23 @@ impl Actor for StarknetHost {
                 block_bytes,
                 reply_to,
             } => {
-                let maybe_block = Block::from_bytes(block_bytes.as_ref());
-                if let Ok(block) = maybe_block {
-                    let proposed_value = ProposedValue {
-                        height,
-                        round,
-                        valid_round: Round::Nil,
-                        validator_address,
-                        value: block.block_hash,
-                        validity: Validity::Valid,
-                        extension: None,
-                    };
+                match Block::from_bytes(block_bytes.as_ref()) {
+                    Ok(block) => {
+                        let proposed_value = ProposedValue {
+                            height,
+                            round,
+                            valid_round: Round::Nil,
+                            validator_address,
+                            value: block.block_hash,
+                            validity: Validity::Valid,
+                            extension: None,
+                        };
 
-                    reply_to.send(proposed_value)?;
+                        reply_to.send(proposed_value)?;
+                    }
+                    Err(e) => {
+                        error!(%height, %round, "Failed to process synced block bytes: {e}");
+                    }
                 }
 
                 Ok(())

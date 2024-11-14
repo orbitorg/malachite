@@ -280,7 +280,7 @@ where
                     .await;
 
                 if let Err(e) = result {
-                    error!("Error when processing ProposeValue message: {e:?}");
+                    error!("Error when processing ProposeValue message: {e}");
                 }
 
                 Ok(())
@@ -317,7 +317,7 @@ where
                     .await;
 
                 if let Err(e) = result {
-                    error!("Error when processing proposed value: {e:?}");
+                    error!("Error when processing proposed value: {e}");
                 }
 
                 Ok(())
@@ -334,7 +334,7 @@ where
                     )
                     .await
                 {
-                    error!(%height, "Error when processing synced block: {e:?}");
+                    error!(%height, "Error when replaying block: {e}");
                     return Ok(());
                 }
 
@@ -433,7 +433,7 @@ where
                     )
                     .await
                 {
-                    error!(%height, %request_id, "Error when processing synced block: {e:?}");
+                    error!(%height, %request_id, "Error when processing synced block: {e}");
 
                     if let ConsensusError::InvalidCertificate(certificate, e) = e {
                         self.block_sync
