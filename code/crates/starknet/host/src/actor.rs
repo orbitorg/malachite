@@ -295,6 +295,7 @@ impl StarknetHost {
         state: &mut HostState,
         consensus: &ConsensusRef<MockContext>,
         height: Height,
+        latest_height: Height,
     ) -> Result<(), ActorProcessingErr> {
         if let Some(block) = state.block_store.get(height).await? {
             let block = SyncedBlock {
@@ -302,10 +303,8 @@ impl StarknetHost {
                 certificate: block.certificate,
             };
 
-            // FIXME: Error handling
-            consensus
-                .call(|done| ConsensusMsg::ReplayBlock(height, block, done), None)
-                .await?;
+            let last_block = height == latest_height;
+            consensus.cast(ConsensusMsg::ReplayBlock(height, block, last_block))?;
         } else {
             error!(%height, "No block found to replay");
         }
@@ -335,22 +334,44 @@ impl Actor for StarknetHost {
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
-            HostMsg::ConsensusReady { height, consensus } => {
+            HostMsg::ConsensusReady {
+                initial_height,
+                consensus,
+            } => {
+                // Start the first height
+                consensus.cast(ConsensusMsg::StartHeight(initial_height))?;
+
+                Ok(())
+            }
+
+            HostMsg::StartHeight { height, consensus } => {
                 state.height = height;
 
-                let last_seen_height = state.block_store.last_height().unwrap_or_default();
+                let earliest = state.block_store.first_height().unwrap_or_default();
+                let latest = state.block_store.last_height().unwrap_or_default();
 
-                while state.height <= last_seen_height {
-                    warn!(height = %state.height, %last_seen_height, "Replaying block from the block store");
-
-                    // We are behind, we should catch up
-                    // Let's replay the block for this height
-                    self.replay_block(state, &consensus, state.height).await?;
-
-                    state.height = state.height.increment();
+                if height > latest {
+                    // We are up to date, no need to replay any blocks
+                    return Ok(());
                 }
 
-                consensus.cast(ConsensusMsg::StartHeight(height))?;
+                if height < earliest {
+                    warn!(
+                        %height, store.earliest = %earliest, store.latest = %latest,
+                        "Need to replay blocks but block store does not have the needed block"
+                    );
+
+                    return Ok(());
+                }
+
+                info!(
+                    %height, store.earliest = %earliest, store.latest = %latest,
+                    "Replaying block from the block store"
+                );
+
+                // We are behind, we should catch up
+                // Let's replay the block for this height
+                self.replay_block(state, &consensus, height, latest).await?;
 
                 Ok(())
             }

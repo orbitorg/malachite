@@ -288,6 +288,14 @@ where
                     error!("Error when starting height {height}: {e}");
                 }
 
+                // Notify host that we have started a new height
+                if let Err(e) = self.host.cast(HostMsg::StartHeight {
+                    height,
+                    consensus: myself.clone(),
+                }) {
+                    error!("Failed to notify host that consensus started a new height: {e}");
+                }
+
                 // Notify BlockSync that we have started a new height
                 if let Err(e) = self.block_sync.cast(BlockSyncMsg::StartHeight(height)) {
                     error!("Failed to notify BlockSync that consensus started a new height: {e}");
@@ -349,7 +357,7 @@ where
                 Ok(())
             }
 
-            (Unstarted | Running | Replaying, Msg::ReplayBlock(height, block, done)) => {
+            (Unstarted | Running | Replaying, Msg::ReplayBlock(height, block, is_last)) => {
                 self.set_phase(state, Replaying)?;
 
                 if let Err(e) = self
@@ -364,7 +372,9 @@ where
                     return Ok(());
                 }
 
-                done.send(())?;
+                if is_last {
+                    self.set_phase(state, Running)?;
+                }
 
                 Ok(())
             }
@@ -419,10 +429,8 @@ where
                 if connected_peers == total_peers {
                     info!(count = %connected_peers, "Enough peers connected to start consensus");
 
-                    let height = state.consensus.driver.height();
-
                     self.host.cast(HostMsg::ConsensusReady {
-                        height,
+                        initial_height: state.consensus.params.start_height,
                         consensus: myself.clone(),
                     })?;
                 }

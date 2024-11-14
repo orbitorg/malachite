@@ -49,6 +49,12 @@ pub type HostRef<Ctx> = ActorRef<HostMsg<Ctx>>;
 pub enum HostMsg<Ctx: Context> {
     /// Consensus is ready to start.
     ConsensusReady {
+        initial_height: Ctx::Height,
+        consensus: ConsensusRef<Ctx>,
+    },
+
+    /// Consensus has started a new height
+    StartHeight {
         height: Ctx::Height,
         consensus: ConsensusRef<Ctx>,
     },
