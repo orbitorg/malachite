@@ -312,7 +312,7 @@ where
                 Ok(())
             }
 
-            (Running, Msg::TimeoutElapsed(elapsed)) => {
+            (Running | Replaying, Msg::TimeoutElapsed(elapsed)) => {
                 let Some(timeout) = state.timers.intercept_timer_msg(elapsed) else {
                     // Timer was cancelled or already processed, ignore
                     return Ok(());
@@ -337,7 +337,7 @@ where
                 Ok(())
             }
 
-            (Running, Msg::ReceivedProposedValue(value)) => {
+            (Running | Replaying, Msg::ReceivedProposedValue(value)) => {
                 let result = self
                     .process_input(&myself, state, ConsensusInput::ReceivedProposedValue(value))
                     .await;
