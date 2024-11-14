@@ -132,6 +132,13 @@ impl Db {
         Ok(block)
     }
 
+    fn has(&self, height: Height) -> Result<bool, StoreError> {
+        let tx = self.db.begin_read()?;
+        let table = tx.open_table(BLOCK_TABLE)?;
+        let value = table.get(&height)?;
+        Ok(value.is_some())
+    }
+
     fn insert(&self, decided_block: DecidedBlock) -> Result<(), StoreError> {
         let height = decided_block.block.height;
 
@@ -223,11 +230,20 @@ impl BlockStore {
         tokio::task::spawn_blocking(move || db.get(height)).await?
     }
 
+    pub async fn has(&self, height: Height) -> Result<bool, StoreError> {
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || db.has(height)).await?
+    }
+
     pub async fn store(
         &self,
         certificate: &CommitCertificate<MockContext>,
         txes: &[Transaction],
     ) -> Result<(), StoreError> {
+        if self.db.has(certificate.height)? {
+            return Ok(());
+        }
+
         let block_id = certificate.value_id;
 
         let decided_block = DecidedBlock {
