@@ -9,6 +9,7 @@ use libp2p::PeerId;
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
 use tokio::sync::broadcast;
 use tokio::time::Instant;
+use tracing::trace;
 use tracing::{debug, error, info, warn};
 
 use malachite_blocksync as blocksync;
@@ -69,7 +70,7 @@ pub enum Msg<Ctx: Context> {
     ReceivedProposedValue(ProposedValue<Ctx>),
 
     /// TODO
-    ReplayBlock(Ctx::Height, SyncedBlock<Ctx>, RpcReplyPort<()>),
+    ReplayBlock(Ctx::Height, SyncedBlock<Ctx>, bool),
 
     /// Get the status of the consensus state machine
     GetStatus(RpcReplyPort<Status<Ctx>>),
@@ -227,9 +228,32 @@ where
             state: &mut state.consensus,
             metrics: &self.metrics,
             with: effect => {
-                self.handle_effect(myself, state.phase, &mut state.timers, &mut state.timeouts, effect).await
+                self.handle_effect(myself, &mut state.timers, &mut state.timeouts, effect).await
             }
         )
+    }
+
+    fn set_phase(&self, state: &mut State<Ctx>, phase: Phase) -> Result<(), ActorProcessingErr> {
+        use Phase::{Replaying, Running, Unstarted};
+
+        let prev = state.phase;
+        state.phase = phase;
+
+        match (prev, phase) {
+            (Replaying, Running) => {
+                // Notify BlockSync that we have finished replaying blocks
+                self.block_sync.cast(BlockSyncMsg::Toggle(true))?;
+            }
+
+            (Running | Unstarted, Phase::Replaying) => {
+                // Notify BlockSync that we are replaying blocks
+                self.block_sync.cast(BlockSyncMsg::Toggle(false))?;
+            }
+
+            _ => (),
+        }
+
+        Ok(())
     }
 
     async fn handle_msg(
@@ -240,13 +264,15 @@ where
     ) -> Result<(), ActorProcessingErr> {
         use Phase::{Replaying, Running, Unstarted};
 
+        trace!(phase = ?state.phase, msg_type = %msg.msg_type(), "Handling message");
+
         match (state.phase, msg) {
             (Unstarted | Running, Msg::GossipEvent(event)) => {
                 self.handle_gossip_event(myself, state, event).await
             }
 
             (Unstarted | Running | Replaying, Msg::StartHeight(height)) => {
-                state.phase = Running;
+                self.set_phase(state, Running)?;
 
                 let validator_set = self.get_validator_set(height).await?;
 
@@ -324,7 +350,7 @@ where
             }
 
             (Unstarted | Running | Replaying, Msg::ReplayBlock(height, block, done)) => {
-                state.phase = Replaying;
+                self.set_phase(state, Replaying)?;
 
                 if let Err(e) = self
                     .process_input(
@@ -348,15 +374,14 @@ where
                 let status = Status::new(state.consensus.driver.height(), earliest_block_height);
 
                 if let Err(e) = reply_to.send(status) {
-                    error!("Error when replying to GetStatus message: {e:?}");
+                    error!("Error when replying to GetStatus message: {e}");
                 }
 
                 Ok(())
             }
 
             (phase, msg) => {
-                // TODO: Switch to trace level so we don't spam the logs
-                warn!(?phase, msg = %msg.msg_type(), "Ignoring message");
+                trace!(?phase, msg = %msg.msg_type(), "Ignored message");
 
                 Ok(())
             }
@@ -551,7 +576,6 @@ where
     async fn handle_effect(
         &self,
         myself: &ActorRef<Msg<Ctx>>,
-        phase: Phase,
         timers: &mut Timers<Ctx>,
         timeouts: &mut Timeouts,
         effect: Effect<Ctx>,
@@ -674,11 +698,6 @@ where
                 validator_address,
                 block_bytes,
             } => {
-                if phase == Phase::Replaying {
-                    warn!(%height, "Ignoring synced block while replaying blocks");
-                    return Ok(Resume::Continue);
-                }
-
                 debug!(%height, "Consensus received synced block, sending to host");
 
                 self.host.call_and_forward(

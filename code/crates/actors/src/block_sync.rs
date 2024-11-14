@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use malachite_blocksync::{self as blocksync, OutboundRequestId};
 use malachite_blocksync::{Request, SyncedBlock};
 use malachite_common::{CertificateError, CommitCertificate, Context};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::gossip_consensus::{GossipConsensusMsg, GossipConsensusRef, GossipEvent, Status};
 use crate::host::{HostMsg, HostRef};
@@ -49,6 +49,9 @@ pub type InflightRequests<Ctx> = HashMap<OutboundRequestId, InflightRequest<Ctx>
 
 #[derive_where(Debug)]
 pub enum Msg<Ctx: Context> {
+    /// Toggle block sync on or off
+    Toggle(bool),
+
     /// Internal tick
     Tick,
 
@@ -69,6 +72,21 @@ pub enum Msg<Ctx: Context> {
 
     /// We received an invalid [`CommitCertificate`] from a peer
     InvalidCertificate(PeerId, CommitCertificate<Ctx>, CertificateError<Ctx>),
+}
+
+impl<Ctx: Context> Msg<Ctx> {
+    pub fn msg_type(&self) -> &'static str {
+        match self {
+            Msg::Toggle(_) => "Toggle",
+            Msg::Tick => "Tick",
+            Msg::GossipEvent(_) => "GossipEvent",
+            Msg::Decided(_) => "Decided",
+            Msg::StartHeight(_) => "StartHeight",
+            Msg::GotDecidedBlock(_, _, _) => "GotDecidedBlock",
+            Msg::TimeoutElapsed(_) => "TimeoutElapsed",
+            Msg::InvalidCertificate(_, _, _) => "InvalidCertificate",
+        }
+    }
 }
 
 impl<Ctx: Context> From<TimeoutElapsed<Timeout>> for Msg<Ctx> {
@@ -99,7 +117,10 @@ pub struct Args<Ctx: Context> {
 }
 
 pub struct State<Ctx: Context> {
-    /// The state of the blocksync state machine
+    /// Whether block sync is enabled
+    enabled: bool,
+
+    /// The state of the block sync state machine
     blocksync: blocksync::State<Ctx>,
 
     /// Scheduler for timers
@@ -243,6 +264,10 @@ where
         state: &mut State<Ctx>,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
+            Msg::Toggle(enabled) => {
+                state.enabled = enabled;
+            }
+
             Msg::Tick => {
                 self.process_input(&myself, state, blocksync::Input::Tick)
                     .await?;
@@ -367,13 +392,10 @@ where
             || Msg::Tick,
         ));
 
-        if !self.params.enabled {
-            ticker.abort();
-        }
-
         let rng = Box::new(rand::rngs::StdRng::from_entropy());
 
         Ok(State {
+            enabled: self.params.enabled,
             blocksync: blocksync::State::new(rng, args.initial_height),
             timers: Timers::new(myself.clone()),
             inflight: HashMap::new(),
@@ -388,13 +410,15 @@ where
         msg: Self::Msg,
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
-        if !self.params.enabled {
-            warn!("Block sync is disabled");
+        let msg_type = msg.msg_type();
+
+        if !state.enabled && !matches!(msg, Msg::Toggle(_)) {
+            trace!(%msg_type, "Block sync is disabled");
             return Ok(());
         }
 
         if let Err(e) = self.handle_msg(myself, msg, state).await {
-            error!("Error handling message: {e:?}");
+            error!(%msg_type, "Error handling message: {e}");
         }
 
         Ok(())
