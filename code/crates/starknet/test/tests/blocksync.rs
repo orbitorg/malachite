@@ -24,10 +24,12 @@ pub async fn crash_restart() {
     let n3 = TestNode::new(3)
         .vp(5)
         .start()
-        // Then the test runner waits until it reaches height 2...
+        // Wait until the node reaches height 2...
         .wait_until(2)
-        // ...and kills the node!
+        // ...and then kills it
         .crash()
+        // Reset the database so that the node has to do BlockSync from height 1
+        .reset_db()
         // After that, it waits 5 seconds before restarting the node
         .restart_after(Duration::from_secs(5))
         // Wait until the node reached the expected height
@@ -59,6 +61,7 @@ pub async fn aggressive_pruning() {
         .start()
         .wait_until(2)
         .crash()
+        .reset_db()
         .restart_after(Duration::from_secs(5))
         .wait_until(HEIGHT)
         .success();
@@ -69,6 +72,36 @@ pub async fn aggressive_pruning() {
             TestParams {
                 enable_blocksync: true, // Enable BlockSync
                 max_retain_blocks: 10,  // Prune blocks older than 10
+                ..Default::default()
+            },
+        )
+        .await
+}
+
+#[tokio::test]
+pub async fn replay_blocks() {
+    const HEIGHT: u64 = 15;
+
+    // Node 1 starts with 10 voting power.
+    let n1 = TestNode::new(1).vp(10).start().wait_until(HEIGHT).success();
+    let n2 = TestNode::new(2).vp(10).start().wait_until(HEIGHT).success();
+
+    let n3 = TestNode::new(3)
+        .vp(5)
+        .start()
+        .wait_until(5)
+        .crash()
+        // Here we don't reset the database, so the node will first replay the blocks and then switch to BlockSync
+        .reset_db()
+        .restart_after(Duration::from_secs(5))
+        .wait_until(HEIGHT)
+        .success();
+
+    Test::new([n1, n2, n3])
+        .run_with_custom_config(
+            Duration::from_secs(60), // Timeout for the whole test
+            TestParams {
+                enable_blocksync: true, // Enable BlockSync
                 ..Default::default()
             },
         )

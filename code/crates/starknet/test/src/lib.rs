@@ -104,6 +104,7 @@ pub enum Step {
     Expect(Expected),
     Success,
     Pause,
+    ResetDb,
 }
 
 pub type NodeId = usize;
@@ -149,6 +150,11 @@ impl TestNode {
 
     pub fn crash(mut self) -> Self {
         self.steps.push(Step::Crash);
+        self
+    }
+
+    pub fn reset_db(mut self) -> Self {
+        self.steps.push(Step::ResetDb);
         self
     }
 
@@ -380,6 +386,14 @@ async fn run_node(
                     .stop_and_wait(Some("Node must crash".to_string()), None)
                     .await
                     .expect("Node must stop");
+            }
+
+            Step::ResetDb => {
+                info!("Resetting database");
+
+                let db_path = home_dir.join("db");
+                std::fs::remove_dir_all(&db_path).expect("Database must be removed");
+                std::fs::create_dir_all(&db_path).expect("Database must be created");
             }
 
             Step::Restart(after) => {
