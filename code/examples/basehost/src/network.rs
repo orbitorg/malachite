@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
-use tracing::{info, span, trace, Level};
+use tracing::{debug, info, span, trace, Level};
 
 use malachite_common::{Height, SignedMessage, Timeout, TimeoutStep, Validity};
 use malachite_consensus::{
@@ -21,6 +21,9 @@ use crate::context::peer_set::BasePeerSet;
 use crate::context::value::BaseValue;
 use crate::context::BaseContext;
 use crate::decision::Decision;
+
+// The delay between each consecutive step
+pub const STEP_DELAY: Duration = Duration::from_millis(200);
 
 #[allow(dead_code)]
 pub struct Network {
@@ -70,16 +73,16 @@ impl Network {
             states.push(s);
         }
 
-        // Channels on which we'll receive the decided heights
+        // Channels on which send/receive the decisions
         let (tx, rx) = mpsc::channel();
 
         (
             Network {
                 peers: val_set,
                 params,
-                metrics: vec![],         // Initialize during bootstrap
-                inboxes: HashMap::new(), // Initialize during bootstrap
-                tx_decision: tx,         // Initialize later
+                metrics: vec![], // Initialize during bootstrap
+                inboxes: HashMap::new(),
+                tx_decision: tx,
             },
             states,
             rx,
@@ -91,7 +94,7 @@ impl Network {
         // Todo: Potentially introduce an intermediate abstraction
         //     layer to handle timeouts
 
-        info!("bootstrapping network");
+        debug!("bootstrapping network");
         self.bootstrap_network(states);
         info!("bootstrap done");
 
@@ -101,13 +104,13 @@ impl Network {
             self.step_arbitrary_peer(states);
 
             // Simulate network and execution delays
-            thread::sleep(Duration::from_millis(200));
+            thread::sleep(STEP_DELAY);
         }
     }
 
     // Sends a [`Input::Start`] to each peer
     fn bootstrap_network(&mut self, states: &mut Vec<State<BaseContext>>) {
-        let input = self.start_new_height(BaseHeight::default());
+        let input = self.input_start_height(BaseHeight::default());
 
         let mut position = 0;
         for peer_state in states.iter_mut() {
@@ -222,7 +225,7 @@ impl Network {
                 // Special case to handle: If it's a timeout for commit step
                 let Timeout { round: _, step } = t;
                 if step == TimeoutStep::Commit {
-                    info!("Triggering TimeoutElapsed for Commit");
+                    debug!("Triggering TimeoutElapsed for Commit");
                     // We handle this timeout instantly: Signal that the timeout elapsed
                     // This will prompt consensus to provide the effect `Decide`
                     let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
@@ -286,7 +289,7 @@ impl Network {
                 Ok(Resume::Continue)
             }
             Effect::GetValidatorSet(h) => {
-                info!("GetValidatorSet({}); providing the default", h);
+                debug!("GetValidatorSet({}); providing the default", h);
 
                 let val_set = self
                     .params
@@ -343,7 +346,7 @@ impl Network {
     }
 
     // Convenience function
-    fn start_new_height(&self, height: BaseHeight) -> Input<BaseContext> {
+    fn input_start_height(&self, height: BaseHeight) -> Input<BaseContext> {
         // The starting validator set
         let val_set = self
             .params

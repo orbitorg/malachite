@@ -13,6 +13,7 @@ pub struct BaseVote {
     pub value_id: NilOrVal<BaseValueId>,
     pub round: Round,
     pub voter: BaseAddress,
+    pub extension: Option<Extension>,
 }
 
 impl BaseVote {
@@ -64,7 +65,10 @@ impl malachite_common::Vote<BaseContext> for BaseVote {
         None
     }
 
-    fn extend(self, _extension: Extension) -> Self {
-        unimplemented!()
+    fn extend(self, extension: Extension) -> Self {
+        Self {
+            extension: Some(extension),
+            ..self
+        }
     }
 }
