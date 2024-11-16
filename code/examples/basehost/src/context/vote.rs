@@ -27,7 +27,7 @@ impl fmt::Display for BaseVote {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{:?} / {} / {} / {:?} / <- {}",
+            "{:?} / {} / {} / {:?} / {}",
             self.vote_type, self.height, self.round, self.value_id, self.voter
         )
     }
