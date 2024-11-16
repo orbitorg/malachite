@@ -56,7 +56,7 @@ impl Context for BaseContext {
     type Value = BaseValue;
     type Vote = BaseVote;
 
-    // Todo: Can we lower the assumptions on the signing scheme &
+    // Todo: Can we reduce the # of assumptions on the signing scheme &
     //  signature checks?
     // As a shortcut, we'll use the one from malachite. This might
     // actually be the right way to go for the library.
@@ -148,6 +148,9 @@ impl Context for BaseContext {
             value_id,
             round,
             voter: address,
+            // TODO: A bit strange there is option to put extension into Prevotes
+            //  clarify.
+            extension: None,
         }
     }
 
@@ -163,6 +166,7 @@ impl Context for BaseContext {
             value_id,
             round,
             voter: address,
+            extension: None,
         }
     }
 }
