@@ -7,7 +7,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use malachite_common::{SignedMessage, Timeout, TimeoutStep, Validity};
+use malachite_common::{Height, SignedMessage, Timeout, TimeoutStep, Validity};
 use malachite_consensus::{
     ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State,
 };
@@ -281,8 +281,22 @@ impl Network {
 
                 Ok(Resume::Continue)
             }
-            Effect::GetValidatorSet(_) => {
-                panic!("GetValidatorSet not impl")
+            Effect::GetValidatorSet(h) => {
+                println!(
+                    "\t{}** GetValidatorSet({}); providing the default",
+                    h, peer_id
+                );
+
+                let val_set = self
+                    .params
+                    .get(0)
+                    .expect("no params found")
+                    .initial_validator_set
+                    .clone();
+
+                // Todo: Clarify why is this call needed??
+                //  The app already provides the validator set in `StartHeight`.
+                Ok(Resume::ValidatorSet(h, Some(val_set)))
             }
             Effect::VerifySignature(m, _) => {
                 println!(
@@ -306,14 +320,21 @@ impl Network {
                 // Let the top-level application know about the decision
                 self.tx_decision
                     .send(Decision {
-                        peer: BaseAddress(peer_id),
+                        peer: BaseAddress(peer_id.clone()),
                         value: proposal.value,
                     })
                     .expect("unable to send a decision");
 
                 // Proceed to the next height
                 let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
-                ix.push_back(Input::StartHeight(h, r, BaseValue(786), None));
+                // Todo: Reuse `start_new_height` somehow, needs refactoring
+                let val_set = self
+                    .params
+                    .get(0)
+                    .expect("no params found")
+                    .initial_validator_set
+                    .clone();
+                ix.push_back(Input::StartHeight(proposal.height.increment(), val_set));
 
                 Ok(Resume::Continue)
             }
