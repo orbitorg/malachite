@@ -392,6 +392,8 @@ dependencies = [
  "malachite-test",
  "rand",
  "signature",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

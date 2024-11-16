@@ -6,6 +6,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
+use tracing::{info, span, trace, Level};
 
 use malachite_common::{Height, SignedMessage, Timeout, TimeoutStep, Validity};
 use malachite_consensus::{
@@ -90,9 +91,9 @@ impl Network {
         // Todo: Potentially introduce an intermediate abstraction
         //     layer to handle timeouts
 
-        println!("bootstrapping network");
+        info!("bootstrapping network");
         self.bootstrap_network(states);
-        println!("bootstrap done");
+        info!("bootstrap done");
 
         // Busy loop to orchestrate among peers
         loop {
@@ -185,7 +186,7 @@ impl Network {
             self.process_peer(msg, ps, metrics, peer_state)
                 .expect("unknown error during step_peer");
         } else {
-            println!(".. empty inbox @ {}", position);
+            trace!("empty inbox @ {}", position);
         }
     }
 
@@ -196,30 +197,32 @@ impl Network {
     ) -> Result<Resume<BaseContext>, String> {
         let peer_id = peer_params.address.0.to_owned();
 
-        // Todo: Handle the actual side-effects, most of them are boilerplate
-        // Todo: Use proper logging w/ scoped vars
+        let span = span!(Level::INFO, "handle_effect", peer_id);
+        let _enter = span.enter();
+
         match effect {
             Effect::ResetTimeouts => {
-                println!("\t{}** ResetTimeouts", peer_id);
+                trace!("ResetTimeouts");
 
                 Ok(Resume::Continue)
             }
             Effect::CancelAllTimeouts => {
-                println!("\t{}** CancelAllTimeouts", peer_id);
+                trace!("CancelAllTimeouts");
 
                 Ok(Resume::Continue)
             }
             Effect::CancelTimeout(_) => {
-                println!("\t{}** CancelTimeout", peer_id);
+                trace!("CancelTimeout");
 
                 Ok(Resume::Continue)
             }
             Effect::ScheduleTimeout(t) => {
-                println!("\t{}** ScheduleTimeout {}", peer_id, t);
+                trace!("ScheduleTimeout {}", t);
 
                 // Special case to handle: If it's a timeout for commit step
                 let Timeout { round: _, step } = t;
                 if step == TimeoutStep::Commit {
+                    info!("Triggering TimeoutElapsed for Commit");
                     // We handle this timeout instantly: Signal that the timeout elapsed
                     // This will prompt consensus to provide the effect `Decide`
                     let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
@@ -229,14 +232,14 @@ impl Network {
                 Ok(Resume::Continue)
             }
             Effect::StartRound(_, _, _) => {
-                println!("\t{}** StartRound", peer_id);
+                trace!("StartRound");
 
                 // Nothing in particular to keep track of
 
                 Ok(Resume::Continue)
             }
             Effect::Broadcast(v) => {
-                println!("\t{}** Broadcast {}", peer_id, pretty_broadcast(&v));
+                info!("Broadcast {}", pretty_broadcast(&v));
 
                 // Push the signed consensus message into the inbox of all peers
                 // This is all that broadcast entails
@@ -270,22 +273,20 @@ impl Network {
                 Ok(Resume::Continue)
             }
             Effect::GetValue(h, r, _) => {
-                println!("\t{}** GetValue", peer_id);
+                trace!("GetValue");
 
                 // Control passes to the application here.
                 // The app creates a value and provides it as input to Malachite
                 // in the form of a `ProposeValue` variant.
                 // Register this input in the inbox of the current validator.
                 let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
-                ix.push_back(Input::ProposeValue(h, r, BaseValue(786), None));
+                let value = 786 + h.0;
+                ix.push_back(Input::ProposeValue(h, r, BaseValue(value), None));
 
                 Ok(Resume::Continue)
             }
             Effect::GetValidatorSet(h) => {
-                println!(
-                    "\t{}** GetValidatorSet({}); providing the default",
-                    h, peer_id
-                );
+                info!("GetValidatorSet({}); providing the default", h);
 
                 let val_set = self
                     .params
@@ -299,11 +300,7 @@ impl Network {
                 Ok(Resume::ValidatorSet(h, Some(val_set)))
             }
             Effect::VerifySignature(m, _) => {
-                println!(
-                    "\t{}** VerifySignature {}",
-                    peer_id,
-                    pretty_verify_signature(m)
-                );
+                trace!("VerifySignature {}", pretty_verify_signature(m));
 
                 // We should implement this for performance reasons and to reflect realistic
                 // conditions.
@@ -322,6 +319,7 @@ impl Network {
                     .send(Decision {
                         peer: BaseAddress(peer_id.clone()),
                         value: proposal.value,
+                        height: proposal.height,
                     })
                     .expect("unable to send a decision");
 

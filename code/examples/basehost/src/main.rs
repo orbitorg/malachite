@@ -8,13 +8,14 @@
 // The experience of building a system on top of Malakite in this example
 // should be no different from building on top of an SQLite instance.
 
+use crate::decision::Decision;
+use crate::network::Network;
 use std::process::exit;
 use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::Duration;
-
-use crate::decision::Decision;
-use crate::network::Network;
+use tracing::level_filters::LevelFilter;
+use tracing::{error, warn};
+use tracing_subscriber::EnvFilter;
 
 mod common;
 mod context;
@@ -22,6 +23,9 @@ mod decision;
 mod network;
 
 fn main() {
+    // Some sensible defaults to make logging work
+    init();
+
     // Create a network of 4 peers
     let (mut n, mut states, rx) = Network::new(4);
 
@@ -42,19 +46,33 @@ fn handle_decisions_background(rx: Receiver<Decision>) {
             let res = rx.recv();
             match res {
                 Ok(d) => {
-                    println!(
-                        "new decision happened @ {} on {}",
-                        d.peer.to_string(),
-                        d.value.0.to_string()
+                    warn!(
+                        peer = %d.peer.to_string(),
+                        value = %d.value.0.to_string(),
+                        height = %d.height,
+                        "new decision took place",
                     );
                 }
                 Err(err) => {
-                    println!("error receiving decisions with message: {:?}", err);
-                    println!("stopping");
+                    error!(error = ?err, "error receiving decisions");
+                    error!("stopping");
                     exit(0);
                 }
             }
-            thread::sleep(Duration::from_secs(1));
         }
     });
+}
+
+fn init() {
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::WARN.into())
+        .from_env()
+        .unwrap()
+        .add_directive("basehost=info".parse().unwrap());
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .compact()
+        .with_target(false)
+        .init();
 }

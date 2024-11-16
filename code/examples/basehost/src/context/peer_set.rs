@@ -1,9 +1,11 @@
 /// Implementation of `PeerSet` and some utility methods.
 use std::cmp::PartialEq;
+use tracing::warn;
 
 use crate::context::address::BaseAddress;
 use crate::context::peer::BasePeer;
 use crate::context::BaseContext;
+
 use malachite_common::{ValidatorSet, VotingPower};
 use malachite_test::PublicKey;
 
@@ -23,7 +25,7 @@ impl BasePeerSet {
 
         for i in 0..size {
             let peer = BasePeer::new(i.to_string(), pub_key);
-            println!("{}: started ", peer);
+            warn!(peer = %i, "started");
 
             peers.push(peer);
         }

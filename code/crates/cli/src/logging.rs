@@ -55,7 +55,7 @@ pub fn enable_ansi() -> bool {
 /// Common prefixes of the crates targeted by the default log level.
 const TARGET_CRATES: &[&str] = &["malachite"];
 
-/// Build a tracing directive setting the log level for the relayer crates to the
+/// Build a tracing directive setting the log level for the malachite crates to the
 /// given `log_level`.
 pub fn default_directive(log_level: &str) -> String {
     use itertools::Itertools;
@@ -67,7 +67,7 @@ pub fn default_directive(log_level: &str) -> String {
 }
 
 /// Builds a tracing filter based on the input `log_levels`.
-/// Enables tracing exclusively for the relayer crates.
+/// Enables tracing exclusively for the malachite-related crates.
 /// Returns error if the filter failed to build.
 fn build_tracing_filter(log_levels: &str) -> EnvFilter {
     // Prefer RUST_LOG as the default setting.
