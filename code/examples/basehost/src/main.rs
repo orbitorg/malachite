@@ -8,14 +8,15 @@
 // The experience of building a system on top of Malakite in this example
 // should be no different from building on top of an SQLite instance.
 
-use crate::decision::Decision;
-use crate::network::Network;
 use std::process::exit;
 use std::sync::mpsc::Receiver;
 use std::thread;
 use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
 use tracing_subscriber::EnvFilter;
+
+use crate::decision::Decision;
+use crate::network::Network;
 
 mod common;
 mod context;

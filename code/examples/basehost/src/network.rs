@@ -25,12 +25,7 @@ use crate::decision::Decision;
 // The delay between each consecutive step
 pub const STEP_DELAY: Duration = Duration::from_millis(200);
 
-#[allow(dead_code)]
 pub struct Network {
-    // The set of all peers
-    // Remains static throughout the lifetime
-    peers: BasePeerSet,
-
     // Params of each peer
     // Todo: Same as for the state vector, revisit this decision
     // Todo: Unclear if we need to store this separately for each
@@ -78,7 +73,6 @@ impl Network {
 
         (
             Network {
-                peers: val_set,
                 params,
                 metrics: vec![], // Initialize during bootstrap
                 inboxes: HashMap::new(),
@@ -112,8 +106,7 @@ impl Network {
     fn bootstrap_network(&mut self, states: &mut Vec<State<BaseContext>>) {
         let input = self.input_start_height(BaseHeight::default());
 
-        let mut position = 0;
-        for peer_state in states.iter_mut() {
+        for (position, peer_state) in states.iter_mut().enumerate() {
             let peer_params = self
                 .params
                 .get(position)
@@ -133,9 +126,6 @@ impl Network {
 
             // Save the metrics for later use
             self.metrics.push(metrics);
-
-            // Prep to advance to the next peer
-            position += 1;
         }
     }
 
