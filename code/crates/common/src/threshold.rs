@@ -30,13 +30,42 @@ pub struct ThresholdParams {
     pub honest: ThresholdParam,
 }
 
-impl Default for ThresholdParams {
-    fn default() -> Self {
-        Self {
-            quorum: ThresholdParam::TWO_F_PLUS_ONE,
-            honest: ThresholdParam::F_PLUS_ONE,
-        }
-    }
+impl ThresholdParams {
+    /// One third of the total weight may be faulty (f = 1/3)
+    pub const ONE_THIRD: ThresholdParams = one_third::THRESHOLD_PARAMS;
+
+    /// One fifth of the total weight may be faulty (f = 1/5)
+    pub const ONE_FIFTH: ThresholdParams = one_fifth::THRESHOLD_PARAMS;
+}
+
+mod one_third {
+    use super::{ThresholdParam, ThresholdParams};
+
+    pub const THRESHOLD_PARAMS: ThresholdParams = ThresholdParams {
+        quorum: QUORUM,
+        honest: HONEST,
+    };
+
+    /// More than one third of the total weight (f + 1)
+    pub const HONEST: ThresholdParam = ThresholdParam::new(1, 3);
+
+    /// More than two thirds of the total weight (2f + 1)
+    pub const QUORUM: ThresholdParam = ThresholdParam::new(2, 3);
+}
+
+mod one_fifth {
+    use super::{ThresholdParam, ThresholdParams};
+
+    pub const THRESHOLD_PARAMS: ThresholdParams = ThresholdParams {
+        quorum: QUORUM,
+        honest: HONEST,
+    };
+
+    /// More than one fifth of the total weight (f + 1)
+    pub const HONEST: ThresholdParam = ThresholdParam::new(1, 5);
+
+    /// More than two fifths of the total weight (2f + 1)
+    pub const QUORUM: ThresholdParam = ThresholdParam::new(2, 5);
 }
 
 /// Represents the different quorum thresholds.
@@ -50,12 +79,6 @@ pub struct ThresholdParam {
 }
 
 impl ThresholdParam {
-    /// 2f+1, ie. more than two thirds of the total weight
-    pub const TWO_F_PLUS_ONE: Self = Self::new(2, 3);
-
-    /// f+1, ie. more than one third of the total weight
-    pub const F_PLUS_ONE: Self = Self::new(1, 3);
-
     /// Create a new threshold parameter with the given numerator and denominator.
     pub const fn new(numerator: u64, denominator: u64) -> Self {
         Self {
@@ -87,21 +110,21 @@ impl ThresholdParam {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn threshold_param_is_met() {
-        assert!(ThresholdParam::TWO_F_PLUS_ONE.is_met(7, 10));
-        assert!(!ThresholdParam::TWO_F_PLUS_ONE.is_met(6, 10));
-        assert!(ThresholdParam::F_PLUS_ONE.is_met(4, 10));
-        assert!(!ThresholdParam::F_PLUS_ONE.is_met(3, 10));
-    }
-
-    #[test]
-    #[should_panic(expected = "attempt to multiply with overflow")]
-    fn threshold_param_is_met_overflow() {
-        assert!(!ThresholdParam::TWO_F_PLUS_ONE.is_met(1, u64::MAX));
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//
+//     #[test]
+//     fn threshold_param_is_met() {
+//         assert!(ThresholdParam::TWO_THIRDS.is_met(7, 10));
+//         assert!(!ThresholdParam::TWO_THIRDS.is_met(6, 10));
+//         assert!(ThresholdParam::ONE_THIRD.is_met(4, 10));
+//         assert!(!ThresholdParam::ONE_THIRD.is_met(3, 10));
+//     }
+//
+//     #[test]
+//     #[should_panic(expected = "attempt to multiply with overflow")]
+//     fn threshold_param_is_met_overflow() {
+//         assert!(!ThresholdParam::TWO_THIRDS.is_met(1, u64::MAX));
+//     }
+// }

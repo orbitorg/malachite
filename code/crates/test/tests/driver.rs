@@ -10,6 +10,7 @@ use malachite_test::utils::validators::make_validators;
 use malachite_test::{
     Address, Height, Proposal, Signature, TestContext, ValidatorSet, Value, ValueId, Vote,
 };
+use malachite_vote::ThresholdParams;
 
 pub struct TestStep {
     desc: &'static str,
@@ -90,7 +91,7 @@ fn driver_steps_proposer() {
     let sel = Arc::new(FixedProposer::new(my_addr));
     let vs = ValidatorSet::new(vec![v1, v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let proposal = new_signed_proposal(Height::new(1), Round::new(0), value, Round::Nil, my_addr);
 
@@ -288,7 +289,7 @@ fn driver_steps_proposer_timeout_get_value() {
     let sel = Arc::new(FixedProposer::new(my_addr));
     let vs = ValidatorSet::new(vec![v1, v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -346,7 +347,7 @@ fn driver_steps_not_proposer_valid() {
     let sel = Arc::new(FixedProposer::new(v1.address));
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let proposal =
         new_signed_proposal(Height::new(1), Round::new(0), value, Round::Nil, v1.address);
@@ -534,7 +535,7 @@ fn driver_steps_not_proposer_invalid() {
     let sel = Arc::new(FixedProposer::new(v1.address));
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let proposal =
         new_signed_proposal(Height::new(1), Round::new(0), value, Round::Nil, v1.address);
@@ -656,7 +657,7 @@ fn driver_steps_not_proposer_other_height() {
     let sel = Arc::new(FixedProposer::new(v1.address));
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     // Proposal is for another height
     let proposal =
@@ -715,7 +716,7 @@ fn driver_steps_not_proposer_other_round() {
     let sel = Arc::new(FixedProposer::new(v1.address));
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     // Proposal is for another round
     let proposal =
@@ -765,7 +766,7 @@ fn driver_steps_not_proposer_timeout_multiple_rounds() {
     let sel = Arc::new(FixedProposer::new(v1.address));
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         // Start round 0, we, v3, are not the proposer
@@ -944,7 +945,7 @@ fn driver_steps_no_value_to_propose() {
     // We are the proposer
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let outputs = driver
         .process(Input::NewRound(Height::new(1), Round::new(0), v1.address))
@@ -975,7 +976,7 @@ fn driver_steps_proposer_not_found() {
     // Proposer is v1, which is not in the validator set
     let vs = ValidatorSet::new(vec![v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let output = driver.process(Input::NewRound(Height::new(1), Round::new(0), v1.address));
     assert_eq!(output, Err(Error::ProposerNotFound(v1.address)));
@@ -996,7 +997,7 @@ fn driver_steps_validator_not_found() {
     // We omit v2 from the validator set
     let vs = ValidatorSet::new(vec![v1.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     // Start new height
     driver
@@ -1029,7 +1030,7 @@ fn driver_steps_skip_round_skip_threshold() {
     let height = Height::new(1);
 
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         // Start round 0, we, v3, are not the proposer
@@ -1131,7 +1132,7 @@ fn driver_steps_skip_round_quorum_threshold() {
     let ctx = TestContext::new(my_sk.clone());
 
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
-    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs.clone(), my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         // Start round 0, we, v3, are not the proposer

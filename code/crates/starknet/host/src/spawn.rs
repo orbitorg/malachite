@@ -12,7 +12,7 @@ use malachite_actors::gossip_mempool::{GossipMempool, GossipMempoolRef};
 use malachite_actors::host::HostRef;
 use malachite_actors::node::{Node, NodeRef};
 use malachite_blocksync as blocksync;
-use malachite_common::CommitCertificate;
+use malachite_common::{CommitCertificate, ThresholdParams};
 use malachite_config::{
     BlockSyncConfig, Config as NodeConfig, MempoolConfig, PubSubProtocol, TestConfig,
     TransportProtocol,
@@ -157,7 +157,7 @@ async fn spawn_consensus_actor(
         start_height,
         initial_validator_set,
         address,
-        threshold_params: Default::default(),
+        threshold_params: ThresholdParams::ONE_FIFTH,
         value_payload,
     };
 

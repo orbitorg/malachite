@@ -5,6 +5,7 @@ use malachite_round::state::State;
 use malachite_test::utils::driver::*;
 use malachite_test::utils::validators::make_validators;
 use malachite_test::{Height, Proposal, TestContext, ValidatorSet, Value};
+use malachite_vote::ThresholdParams;
 
 // The following tests are performed:
 // - L49 with commits from current rounds, no locked value, no valid value:
@@ -70,7 +71,7 @@ fn driver_steps_decide_current_with_no_locked_no_valid() {
 
     let proposal = Proposal::new(Height::new(1), Round::new(0), value, Round::Nil, v1.address);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -144,7 +145,7 @@ fn driver_steps_decide_previous_with_no_locked_no_valid() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let proposal = Proposal::new(Height::new(1), Round::new(0), value, Round::Nil, v1.address);
 
@@ -255,7 +256,7 @@ fn driver_steps_decide_previous_with_locked_and_valid() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let proposal = Proposal::new(Height::new(1), Round::new(0), value, Round::Nil, v1.address);
 
@@ -387,7 +388,7 @@ fn driver_steps_polka_previous_with_locked() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -517,7 +518,7 @@ fn driver_steps_polka_previous_invalid_proposal() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -613,7 +614,7 @@ fn driver_steps_polka_previous_new_proposal() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -741,7 +742,7 @@ fn driver_steps_polka_previous_with_no_locked() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -866,7 +867,7 @@ fn driver_steps_polka_nil_and_timeout_propose() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -929,7 +930,7 @@ fn driver_steps_polka_value_then_proposal() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1001,7 +1002,7 @@ fn driver_steps_polka_any_then_proposal_other() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1060,7 +1061,7 @@ fn driver_equivocate_vote() {
         v1.address,
     );
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1129,7 +1130,7 @@ fn driver_equivocate_proposal() {
         v1.address,
     );
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1200,7 +1201,7 @@ fn driver_conflicting_proposal_unreachable() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1252,7 +1253,7 @@ fn driver_step_change_mux_with_proposal() {
     let ctx = TestContext::new(my_sk.clone());
     let vs = ValidatorSet::new(vec![v1.clone(), v2.clone(), v3.clone()]);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1349,7 +1350,7 @@ fn driver_step_change_mux_with_proposal_and_polka() {
 
     let proposal = Proposal::new(Height::new(1), Round::new(1), value, Round::Nil, v1.address);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1420,7 +1421,7 @@ fn driver_step_change_mux_with_proposal_and_commit_quorum() {
 
     let proposal = Proposal::new(Height::new(1), Round::new(1), value, Round::Nil, v1.address);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1486,7 +1487,7 @@ fn proposal_mux_with_polka() {
 
     let proposal = Proposal::new(Height::new(1), Round::new(1), value, Round::Nil, v1.address);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {
@@ -1554,7 +1555,7 @@ fn proposal_mux_with_commit_quorum() {
 
     let proposal = Proposal::new(Height::new(1), Round::new(1), value, Round::Nil, v1.address);
 
-    let mut driver = Driver::new(ctx, height, vs, my_addr, Default::default());
+    let mut driver = Driver::new(ctx, height, vs, my_addr, ThresholdParams::ONE_THIRD);
 
     let steps = vec![
         TestStep {

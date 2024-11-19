@@ -8,7 +8,7 @@ use malachite_vote::{Threshold, ThresholdParam};
 #[test]
 fn vote_count_nil() {
     let t = 4;
-    let q = ThresholdParam::TWO_F_PLUS_ONE;
+    let q = ThresholdParam::new(2, 3);
     let h = Height::new(1);
     let r = Round::new(0);
 
@@ -85,7 +85,7 @@ fn vote_count_nil() {
 #[test]
 fn vote_count_value() {
     let t = 4;
-    let q = ThresholdParam::TWO_F_PLUS_ONE;
+    let q = ThresholdParam::new(2, 3);
     let h = Height::new(1);
     let r = Round::new(0);
 

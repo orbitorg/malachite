@@ -4,6 +4,7 @@ use malachite_vote::keeper::{Output, VoteKeeper};
 use malachite_test::{
     Address, Height, PrivateKey, Signature, TestContext, Validator, ValidatorSet, ValueId, Vote,
 };
+use malachite_vote::ThresholdParams;
 
 fn setup<const N: usize>(vp: [u64; N]) -> ([Address; N], VoteKeeper<TestContext>) {
     let mut addrs = [Address::new([0; 20]); N];
@@ -13,7 +14,7 @@ fn setup<const N: usize>(vp: [u64; N]) -> ([Address; N], VoteKeeper<TestContext>
         addrs[i] = Address::from_public_key(&pk.public_key());
         vals.push(Validator::new(pk.public_key(), vp[i]));
     }
-    let keeper = VoteKeeper::new(ValidatorSet::new(vals), Default::default());
+    let keeper = VoteKeeper::new(ValidatorSet::new(vals), ThresholdParams::ONE_THIRD);
     (addrs, keeper)
 }
 
