@@ -266,6 +266,7 @@ module consensus {
             if (r > state.round)
                 state
                     .with("step", UnstartedStep)
+                    .with("round", r)
                     .toSkipRoundOutput(r)
             else state.toErrorOutput("RoundSkipCInput for round not bigger than current round")
 
