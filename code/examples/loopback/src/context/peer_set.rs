@@ -1,8 +1,9 @@
 /// Implementation of `PeerSet` and some utility methods.
+///
 use std::cmp::PartialEq;
 use tracing::warn;
 
-use crate::context::address::BaseAddress;
+use crate::context::address::BasePeerAddress;
 use crate::context::peer::BasePeer;
 use crate::context::BaseContext;
 
@@ -17,15 +18,14 @@ pub struct BasePeerSet {
 }
 
 impl BasePeerSet {
-    // Start a new network with the given number of peers
-    // Simplifying assumption: All peers have the same public key
-    // Todo: Make this more reflective of real conditions
-    pub fn start_new(size: u32, pub_key: PublicKey) -> Self {
+    /// Create a new set of peers of cardinality `size`.
+    /// An assumption allowing us to simplify: All peers have the same public key.
+    pub fn new(size: u32, pub_key: PublicKey) -> Self {
         let mut peers = vec![];
 
         for i in 0..size {
-            let peer = BasePeer::new(i.to_string(), pub_key);
-            warn!(peer = %i, "started");
+            let peer = BasePeer::new(i, pub_key);
+            warn!(peer = %i, "created");
 
             peers.push(peer);
         }
@@ -51,7 +51,7 @@ impl ValidatorSet<BaseContext> for BasePeerSet {
         self.count() as u64
     }
 
-    fn get_by_address(&self, address: &BaseAddress) -> Option<&BasePeer> {
+    fn get_by_address(&self, address: &BasePeerAddress) -> Option<&BasePeer> {
         self.peers.iter().find(|v| &v.id == address)
     }
 

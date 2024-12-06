@@ -1,4 +1,5 @@
-// Demonstrates the simplest way to instantiate the Malakite library.
+// The loopback example demonstrates the simplest way to instantiate
+// the Malachite library.
 //
 // We will use a purely local instance of Malakite. The approach is to
 // simulate everything, the network, signing, mempool, etc.
@@ -16,19 +17,19 @@ use tracing::{error, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::decision::Decision;
-use crate::network::Network;
+use crate::system::System;
 
 mod common;
 mod context;
 mod decision;
-mod network;
+mod system;
 
 fn main() {
     // Some sensible defaults to make logging work
     init();
 
     // Create a network of 4 peers
-    let (mut n, mut states, rx) = Network::new(4);
+    let (mut n, mut states, rx) = System::new(4);
 
     // Spawn a thread in the background that handles decided values
     handle_decisions_background(rx);

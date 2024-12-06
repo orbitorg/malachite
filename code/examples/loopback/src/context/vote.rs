@@ -1,7 +1,7 @@
 use malachite_common::{Extension, NilOrVal, Round, SignedExtension, VoteType};
 use std::fmt;
 
-use crate::context::address::BaseAddress;
+use crate::context::address::BasePeerAddress;
 use crate::context::height::BaseHeight;
 use crate::context::value::BaseValueId;
 use crate::context::BaseContext;
@@ -12,7 +12,7 @@ pub struct BaseVote {
     pub height: BaseHeight,
     pub value_id: NilOrVal<BaseValueId>,
     pub round: Round,
-    pub voter: BaseAddress,
+    pub voter: BasePeerAddress,
     pub extension: Option<Extension>,
 }
 
@@ -57,7 +57,7 @@ impl malachite_common::Vote<BaseContext> for BaseVote {
         self.vote_type
     }
 
-    fn validator_address(&self) -> &BaseAddress {
+    fn validator_address(&self) -> &BasePeerAddress {
         &self.voter
     }
 

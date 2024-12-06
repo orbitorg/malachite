@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::context::address::BaseAddress;
+use crate::context::address::BasePeerAddress;
 use crate::context::BaseContext;
 
 use malachite_common::{PublicKey, Validator, VotingPower};
@@ -13,14 +13,14 @@ pub const BASE_VOTING_POWER: u64 = 1;
 /// Implements [`Validator`] trait.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BasePeer {
-    pub id: BaseAddress,
+    pub id: BasePeerAddress,
     pub public_key: PublicKey<BaseContext>,
 }
 
 impl BasePeer {
-    pub fn new(id: String, public_key: PublicKey<BaseContext>) -> BasePeer {
+    pub fn new(id: u32, public_key: PublicKey<BaseContext>) -> BasePeer {
         BasePeer {
-            id: BaseAddress::new(id),
+            id: BasePeerAddress::new(id),
             public_key,
         }
     }
@@ -33,7 +33,7 @@ impl fmt::Display for BasePeer {
 }
 
 impl Validator<BaseContext> for BasePeer {
-    fn address(&self) -> &BaseAddress {
+    fn address(&self) -> &BasePeerAddress {
         &self.id
     }
 

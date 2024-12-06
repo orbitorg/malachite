@@ -1,61 +1,70 @@
-/// A network is a set of peers, comprising an instance of
-/// a Malachite-based decentralized system
-use rand::seq::SliceRandom;
 use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
+use rand::Rng;
 use tracing::{debug, info, span, trace, Level};
 
 use malachite_common::{Height, Round, SignedMessage, Timeout, TimeoutStep, Validity, ValueOrigin};
 use malachite_consensus::{ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State, ValuePayload, ValueToPropose};
 use malachite_metrics::Metrics;
-use ValueOrigin::Consensus;
+
 use crate::common;
-use crate::context::address::BaseAddress;
+use crate::context::address::BasePeerAddress;
 use crate::context::height::BaseHeight;
 use crate::context::peer_set::BasePeerSet;
-use crate::context::BaseContext;
 use crate::context::value::BaseValue;
+use crate::context::BaseContext;
 use crate::decision::Decision;
 
-// The delay between each consecutive step
+/// The delay between each consecutive step the system takes.
 pub const STEP_DELAY: Duration = Duration::from_millis(200);
 
-pub struct Network {
-    // Params of each peer
-    // Todo: Same as for the state vector, revisit this decision
-    // Todo: Unclear if we need to store this separately for each
-    //  peer, because the `state` variable also has the params
-    params: Vec<Params<BaseContext>>,
+/// A system represents:
+///
+/// - The state of all peers, namely params, metrics, networking inboxes.
+/// - The environment for executing the loopback application and producing decisions.
+pub struct System {
+    /// The system size, i.e., number of peers.
+    size: u32,
 
-    metrics: Vec<Metrics>,
+    /// Params of each peer.
+    params: HashMap<BasePeerAddress, Params<BaseContext>>,
 
-    inboxes: HashMap<String, VecDeque<Input<BaseContext>>>,
+    /// The metrics of each peer.
+    metrics: HashMap<BasePeerAddress, Metrics>,
 
-    tx_decision: Sender<Decision>,
+    /// The network inboxes of each peer.
+    inboxes: HashMap<BasePeerAddress, VecDeque<Input<BaseContext>>>,
+
+    /// Streaming of decisions that each peer took.
+    tx_decisions: Sender<Decision>,
 }
 
-impl Network {
-    pub fn new(size: u32) -> (Network, Vec<State<BaseContext>>, Receiver<Decision>) {
+impl System {
+    /// Creates a new system consisting of `size` number of peers.
+    /// Each peer is a validator in the system.
+    ///
+    /// Assumes the size of the system is >= 4 and < 10.
+    pub fn new(size: u32) -> (System, Vec<State<BaseContext>>, Receiver<Decision>) {
         assert!(size >= 4);
         assert!(size < 10);
 
         let mut states = vec![];
-        let mut params = vec![];
+        let mut params = HashMap::new();
 
         // Construct the set of peers that comprise the network
         let ctx = BaseContext::new();
-        let val_set = BasePeerSet::start_new(size, ctx.public_key());
+        let val_set = BasePeerSet::new(size, ctx.public_key());
 
         // Construct the consensus states and params for each peer
         for i in 0..size {
-            let id_addr = i.to_string();
+            let peer_addr = BasePeerAddress::new(i);
             let p = Params {
                 start_height: BaseHeight::default(),
                 initial_validator_set: val_set.clone(),
-                address: BaseAddress::new(id_addr.clone()),
+                address: peer_addr,
                 // Note: The library provides a type and implementation
                 // for threshold params which we're re-using.
                 threshold_params: Default::default(),
@@ -64,7 +73,7 @@ impl Network {
             };
 
             // The params at this specific peer
-            params.push(p.clone());
+            params.insert(peer_addr, p.clone());
 
             // The state at this specific peer
             let s = State::new(ctx.clone(), p);
@@ -75,25 +84,24 @@ impl Network {
         let (tx, rx) = mpsc::channel();
 
         (
-            Network {
+            System {
+                size,
                 params,
-                metrics: vec![], // Initialize during bootstrap
-                inboxes: HashMap::new(),
-                tx_decision: tx,
+                metrics: HashMap::new(), // Initialize later, at `bootstrap` time
+                inboxes: HashMap::new(), // Initialize later, at `bootstrap` time
+                tx_decisions: tx,
             },
             states,
             rx,
         )
     }
 
-    // Orchestrate the execution of this network across all peers
+    /// Orchestrate the execution of this system across the network of all peers.
+    /// Running this will start producing decisions.
     pub fn run(&mut self, states: &mut Vec<State<BaseContext>>) {
-        // Todo: Potentially introduce an intermediate abstraction
-        //     layer to handle timeouts
-
-        debug!("bootstrapping network");
-        self.bootstrap_network(states);
-        info!("bootstrap done");
+        info!("bootstrapping system");
+        self.bootstrap_system(states);
+        info!("system bootstrap done");
 
         // Busy loop to orchestrate among peers
         loop {
@@ -106,29 +114,29 @@ impl Network {
     }
 
     // Sends a [`Input::Start`] to each peer
-    fn bootstrap_network(&mut self, states: &mut Vec<State<BaseContext>>) {
+    fn bootstrap_system(&mut self, states: &mut Vec<State<BaseContext>>) {
         let input = self.input_start_height(BaseHeight::default());
 
         for (position, peer_state) in states.iter_mut().enumerate() {
+            let peer_addr = BasePeerAddress(position as u32);
+
             let peer_params = self
                 .params
-                .get(position)
+                .get(&peer_addr)
                 .expect("could not identify peer at next position")
                 .clone();
 
-            // Todo: Correlation states <-> params <-> metrics is very fragile
-            //     major refactor needed
             let metrics = common::new_metrics();
 
-            // Initialize the inbox
-            self.inboxes.insert(position.to_string(), VecDeque::new());
+            // Initialize the inbox for this peer
+            self.inboxes.insert(peer_addr, VecDeque::new());
 
             // Kick off consensus at this peer
             self.process_peer(input.clone(), &peer_params, &metrics, peer_state)
                 .expect("unknown error during step_peer");
 
             // Save the metrics for later use
-            self.metrics.push(metrics);
+            self.metrics.insert(peer_addr, metrics);
         }
     }
 
@@ -151,23 +159,18 @@ impl Network {
     }
 
     fn step_arbitrary_peer(&mut self, states: &mut Vec<State<BaseContext>>) {
-        // Todo: Should not use clone here
-        let ps = self
-            .params
-            .choose(&mut rand::thread_rng())
-            .expect("the network has no peers")
-            .clone();
+        let arbitrary_peer = get_arbitrary_peer_addr(self.size);
 
-        let state = states.get_mut(ps.address.as_position()).unwrap();
-        // Todo: Fix the clone
-        let metrics = self.metrics.get(ps.address.as_position()).unwrap().clone();
+        let state = states.get_mut(arbitrary_peer.0 as usize).unwrap();
+        let metrics = self.metrics.get(&arbitrary_peer).unwrap().clone();
+        let params = self.params.get(&arbitrary_peer).unwrap().clone();
 
-        self.step_peer(ps.address.0.clone(), &ps, &metrics, state);
+        self.step_peer(arbitrary_peer, &params, &metrics, state);
     }
 
     fn step_peer(
         &mut self,
-        position: String,
+        position: BasePeerAddress,
         ps: &Params<BaseContext>,
         metrics: &Metrics,
         peer_state: &mut State<BaseContext>,
@@ -191,9 +194,9 @@ impl Network {
         peer_params: &Params<BaseContext>,
         effect: Effect<BaseContext>,
     ) -> Result<Resume<BaseContext>, String> {
-        let peer_id = peer_params.address.0.to_owned();
+        let peer_id = peer_params.address;
 
-        let span = span!(Level::INFO, "handle_effect", peer_id);
+        let span = span!(Level::INFO, "handle_effect", "{}", peer_id.0);
         let _enter = span.enter();
 
         match effect {
@@ -219,6 +222,7 @@ impl Network {
                 let Timeout { round: _, step } = t;
                 if step == TimeoutStep::Commit {
                     debug!("Triggering TimeoutElapsed for Commit");
+                    
                     // We handle this timeout instantly: Signal that the timeout elapsed
                     // This will prompt consensus to provide the effect `Decide`
                     let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
@@ -262,7 +266,7 @@ impl Network {
                                 value: sp.value,
                                 validity: Validity::Valid,
                                 extension: None,
-                            }, Consensus));
+                            }, ValueOrigin::Consensus));
                         }
                     }
                 }
@@ -294,15 +298,14 @@ impl Network {
             Effect::GetValidatorSet(h) => {
                 info!("GetValidatorSet({}); providing the default", h);
 
+                // Same assumption as in `input_start_height`.
                 let val_set = self
                     .params
-                    .get(0)
-                    .expect("no params found")
+                    .get(&BasePeerAddress(0))
+                    .expect("no params found at peer position 0")
                     .initial_validator_set
                     .clone();
 
-                // Todo: Clarify why is this call needed??
-                //  The app already provides the validator set in `StartHeight`.
                 Ok(Resume::ValidatorSet(h, Some(val_set)))
             }
             Effect::VerifySignature(m, _) => {
@@ -312,7 +315,7 @@ impl Network {
                 // conditions.
                 // Though in practice, it does not make any difference given the
                 // simulated conditions of the local testnet.
-                // Todo: signature verification for later
+                // Todo: signature verification.
 
                 Ok(Resume::SignatureValidity(true))
             }
@@ -320,9 +323,9 @@ impl Network {
                 certificate
             } => {
                 // Let the top-level application know about the decision
-                self.tx_decision
+                self.tx_decisions
                     .send(Decision {
-                        peer: BaseAddress(peer_id.clone()),
+                        peer: peer_id,
                         value_id: certificate.value_id,
                         height: certificate.height,
                     })
@@ -330,11 +333,12 @@ impl Network {
 
                 // Proceed to the next height
                 let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
-                // Todo: Reuse `start_new_height` somehow, needs refactoring
+
+                // Assumption: Same as in `input_start_height`.
                 let val_set = self
                     .params
-                    .get(0)
-                    .expect("no params found")
+                    .get(&BasePeerAddress(0))
+                    .expect("no params found at peer position 0")
                     .initial_validator_set
                     .clone();
 
@@ -357,12 +361,15 @@ impl Network {
         }
     }
 
-    // Convenience function
+    // Convenience function.
+    // Assumes there is _always_ a peer at position `0`.
+    // We can get around this assumption by storing params in `self`,
+    // but that seems unnecessary.
     fn input_start_height(&self, height: BaseHeight) -> Input<BaseContext> {
         // The starting validator set
         let val_set = self
             .params
-            .get(0)
+            .get(&BasePeerAddress(0))
             .expect("no params found")
             .initial_validator_set
             .clone();
@@ -383,4 +390,13 @@ fn pretty_verify_signature(m: SignedMessage<BaseContext, ConsensusMsg<BaseContex
         ConsensusMsg::Vote(v) => v.to_string(),
         ConsensusMsg::Proposal(p) => p.to_string(),
     }
+}
+
+// Convenience methods to select an arbitrary peer
+fn get_arbitrary_peer_addr(max: u32) -> BasePeerAddress {
+    // Select a random peer position
+    let position = rand::thread_rng().gen_range(0..max);
+
+    debug!(peer = %position, "selected arbitrary peer");
+    BasePeerAddress(position)
 }

@@ -7,7 +7,7 @@ use malachite_common::{
 };
 use malachite_test::{Ed25519, PrivateKey};
 
-use address::BaseAddress;
+use address::BasePeerAddress;
 use height::BaseHeight;
 use peer::BasePeer;
 use peer_set::BasePeerSet;
@@ -47,7 +47,7 @@ impl BaseContext {
 
 #[allow(unused_variables)]
 impl Context for BaseContext {
-    type Address = BaseAddress;
+    type Address = BasePeerAddress;
     type Height = BaseHeight;
     type ProposalPart = BaseProposalPart;
     type Proposal = BaseProposal;

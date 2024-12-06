@@ -2,7 +2,7 @@ use std::fmt;
 
 use malachite_common::Round;
 
-use crate::context::address::BaseAddress;
+use crate::context::address::BasePeerAddress;
 use crate::context::height::BaseHeight;
 use crate::context::value::BaseValue;
 use crate::context::BaseContext;
@@ -12,7 +12,7 @@ use crate::context::BaseContext;
 pub struct BaseProposal {
     pub height: BaseHeight,
     pub value: BaseValue,
-    pub proposer: BaseAddress,
+    pub proposer: BasePeerAddress,
     pub round: Round,
     // Todo: Clarify if needs to be exposed here or at lower levels
     //  of abstraction?
@@ -65,7 +65,7 @@ impl malachite_common::Proposal<BaseContext> for BaseProposal {
         Round::Nil
     }
 
-    fn validator_address(&self) -> &BaseAddress {
+    fn validator_address(&self) -> &BasePeerAddress {
         &self.proposer
     }
 }
