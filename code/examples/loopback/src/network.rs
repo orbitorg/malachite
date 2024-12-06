@@ -9,7 +9,7 @@ use std::time::Duration;
 use tracing::{debug, info, span, trace, Level};
 
 use malachite_common::{Height, Round, SignedMessage, Timeout, TimeoutStep, Validity, ValueOrigin};
-use malachite_consensus::{ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State, ValuePayload};
+use malachite_consensus::{ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State, ValuePayload, ValueToPropose};
 use malachite_metrics::Metrics;
 use ValueOrigin::Consensus;
 use crate::common;
@@ -59,7 +59,8 @@ impl Network {
                 // Note: The library provides a type and implementation
                 // for threshold params which we're re-using.
                 threshold_params: Default::default(),
-                value_payload: ValuePayload::PartsOnly,
+                // Todo: This can be tricky, must be documented properly
+                value_payload: ValuePayload::ProposalOnly,
             };
 
             // The params at this specific peer
@@ -161,10 +162,10 @@ impl Network {
         // Todo: Fix the clone
         let metrics = self.metrics.get(ps.address.as_position()).unwrap().clone();
 
-        self.step_with_inbox_for_peer(ps.address.0.clone(), &ps, &metrics, state);
+        self.step_peer(ps.address.0.clone(), &ps, &metrics, state);
     }
 
-    fn step_with_inbox_for_peer(
+    fn step_peer(
         &mut self,
         position: String,
         ps: &Params<BaseContext>,
@@ -277,17 +278,15 @@ impl Network {
                 // Register this input in the inbox of the current validator.
                 let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
                 let value = 786 + h.0;
-                let input_value = ProposedValue {
+                let input_value = ValueToPropose {
                     height: h,
                     round: r,
                     valid_round: Round::Nil,
-                    validator_address: BaseAddress(peer_id.clone()),
                     value: BaseValue(value),
-                    validity: Validity::Valid,
                     extension: None,
                 };
-                ix.push_back(Input::ProposedValue(
-                    input_value, Consensus
+                ix.push_back(Input::Propose(
+                    input_value
                 ));
 
                 Ok(Resume::Continue)
