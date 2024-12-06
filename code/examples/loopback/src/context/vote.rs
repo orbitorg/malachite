@@ -1,4 +1,4 @@
-use malachite_common::{Extension, NilOrVal, Round, VoteType};
+use malachite_common::{Extension, NilOrVal, Round, SignedExtension, VoteType};
 use std::fmt;
 
 use crate::context::address::BaseAddress;
@@ -61,14 +61,15 @@ impl malachite_common::Vote<BaseContext> for BaseVote {
         &self.voter
     }
 
-    fn extension(&self) -> Option<&Extension> {
+    fn extension(&self) -> Option<&SignedExtension<BaseContext>> {
         None
     }
 
-    fn extend(self, extension: Extension) -> Self {
-        Self {
-            extension: Some(extension),
-            ..self
-        }
+    fn extend(self, _extension: SignedExtension<BaseContext>) -> Self {
+        todo!()
+        // Self {
+        //     extension: Some(*extension),
+        //     ..self
+        // }
     }
 }

@@ -6,20 +6,18 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
-use tracing::{debug, info, span, trace, warn, Level};
+use tracing::{debug, info, span, trace, Level};
 
-use malachite_common::{Height, SignedMessage, Timeout, TimeoutStep, Validity};
-use malachite_consensus::{
-    ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State,
-};
+use malachite_common::{Height, Round, SignedMessage, Timeout, TimeoutStep, Validity, ValueOrigin};
+use malachite_consensus::{ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State, ValuePayload};
 use malachite_metrics::Metrics;
-
+use ValueOrigin::Consensus;
 use crate::common;
 use crate::context::address::BaseAddress;
 use crate::context::height::BaseHeight;
 use crate::context::peer_set::BasePeerSet;
-use crate::context::value::BaseValue;
 use crate::context::BaseContext;
+use crate::context::value::BaseValue;
 use crate::decision::Decision;
 
 // The delay between each consecutive step
@@ -61,6 +59,7 @@ impl Network {
                 // Note: The library provides a type and implementation
                 // for threshold params which we're re-using.
                 threshold_params: Default::default(),
+                value_payload: ValuePayload::PartsOnly,
             };
 
             // The params at this specific peer
@@ -254,14 +253,15 @@ impl Network {
                             // directly trigger the input.
                             // Todo: Not sure this is right, double check w/ RR & AZ
                             // Todo: This was not intuitive to find (source of bug/confusion)
-                            ix.push_back(Input::ReceivedProposedValue(ProposedValue {
+                            ix.push_back(Input::ProposedValue(ProposedValue {
                                 height: sp.height,
                                 round: sp.round,
+                                valid_round: Round::Nil,
                                 validator_address: sp.proposer.clone(),
                                 value: sp.value,
                                 validity: Validity::Valid,
                                 extension: None,
-                            }));
+                            }, Consensus));
                         }
                     }
                 }
@@ -277,7 +277,18 @@ impl Network {
                 // Register this input in the inbox of the current validator.
                 let ix = self.inboxes.get_mut(&peer_id).expect("inbox not found");
                 let value = 786 + h.0;
-                ix.push_back(Input::ProposeValue(h, r, BaseValue(value), None));
+                let input_value = ProposedValue {
+                    height: h,
+                    round: r,
+                    valid_round: Round::Nil,
+                    validator_address: BaseAddress(peer_id.clone()),
+                    value: BaseValue(value),
+                    validity: Validity::Valid,
+                    extension: None,
+                };
+                ix.push_back(Input::ProposedValue(
+                    input_value, Consensus
+                ));
 
                 Ok(Resume::Continue)
             }
@@ -307,15 +318,14 @@ impl Network {
                 Ok(Resume::SignatureValidity(true))
             }
             Effect::Decide {
-                proposal,
-                commits: _,
+                certificate
             } => {
                 // Let the top-level application know about the decision
                 self.tx_decision
                     .send(Decision {
                         peer: BaseAddress(peer_id.clone()),
-                        value: proposal.value,
-                        height: proposal.height,
+                        value_id: certificate.value_id,
+                        height: certificate.height,
                     })
                     .expect("unable to send a decision");
 
@@ -328,12 +338,22 @@ impl Network {
                     .expect("no params found")
                     .initial_validator_set
                     .clone();
-                ix.push_back(Input::StartHeight(proposal.height.increment(), val_set));
+
+                // Register the input in the inbox of this peer
+                ix.push_back(Input::StartHeight(certificate.height.increment(), val_set));
 
                 Ok(Resume::Continue)
             }
-            Effect::SyncedBlock { .. } => {
-                panic!("SyncedBlock not impl")
+            Effect::RestreamValue(_, _, _, _, _) => {
+                panic!("unimplemented arm Effect::RestreamValue in match effect")
+            }
+            Effect::PersistMessage(_) => {
+                // No support for crash-recovery
+                Ok(Resume::Continue)
+            }
+            Effect::PersistTimeout(_) => {
+                // No support for crash-recovery
+                Ok(Resume::Continue)
             }
         }
     }

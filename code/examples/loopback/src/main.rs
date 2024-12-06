@@ -49,7 +49,7 @@ fn handle_decisions_background(rx: Receiver<Decision>) {
                 Ok(d) => {
                     warn!(
                         peer = %d.peer.to_string(),
-                        value = %d.value.0.to_string(),
+                        value = %d.value_id.to_string(),
                         height = %d.height,
                         "new decision took place",
                     );
