@@ -27,7 +27,7 @@ members = [
   "crates/starknet/*",
 
   # Examples
-  "examples/basehost"
+  "examples/loopback"
 ]
 
 [workspace.package]
