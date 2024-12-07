@@ -19,6 +19,7 @@ use tracing_subscriber::EnvFilter;
 use crate::decision::Decision;
 use crate::system::System;
 
+mod application;
 mod common;
 mod context;
 mod decision;
@@ -33,6 +34,9 @@ fn main() {
 
     // Spawn a thread in the background that handles decided values
     handle_decisions_background(rx);
+
+    // Produce values to agreed-upon here using multi-proposer model
+    // produce_
 
     // Blocking method, starts the network and handles orchestration of
     // block building

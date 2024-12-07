@@ -32,10 +32,8 @@ impl Height for BaseHeight {
 
     fn decrement_by(&self, n: u64) -> Option<Self> {
         match self.0 >= n {
-            true => Some(Self (
-                self.0 - n
-            )),
-            false => None
+            true => Some(Self(self.0 - n)),
+            false => None,
         }
     }
 
