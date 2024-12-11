@@ -32,4 +32,8 @@ pub enum Error {
     /// Error joining threads
     #[error("Error joining threads")]
     Join,
+
+    /// Runtime error
+    #[error("Runtime error: {0}")]
+    Runtime(String),
 }

@@ -1,3 +1,4 @@
+use std::future::Future;
 use clap::Parser;
 use tracing::info;
 
@@ -14,13 +15,20 @@ pub struct StartCmd {
 }
 
 impl StartCmd {
-    pub async fn run<N>(&self, node: &N, metrics: Option<MetricsConfig>) -> Result<(), Error>
+    pub async fn run<N, F, Fut>(
+        &self,
+        node: &N,
+        run: F,
+        metrics: Option<MetricsConfig>,
+    ) -> Result<(), Error>
     where
         N: Node,
+        Fut: Future<Output = Result<(), Box<dyn core::error::Error>>> + Send,
+        F: Fn(&N) -> Fut,
     {
         info!("Node is starting...");
 
-        start(node, metrics).await?;
+        start(node, run, metrics).await.map_err(|error| Error::Runtime(error.to_string()))?;
 
         info!("Node has stopped");
 
@@ -29,9 +37,15 @@ impl StartCmd {
 }
 
 /// start command to run a node.
-pub async fn start<N>(node: &N, metrics: Option<MetricsConfig>) -> Result<(), Error>
+pub async fn start<N, F, Fut>(
+    node: &N,
+    run: F,
+    metrics: Option<MetricsConfig>,
+) -> Result<(), Box<dyn core::error::Error>>
 where
     N: Node,
+    Fut: Future<Output = Result<(), Box<dyn core::error::Error>>> + Send,
+    F: Fn(&N) -> Fut,
 {
     // Enable Prometheus
     if let Some(metrics) = metrics {
@@ -39,8 +53,5 @@ where
     }
 
     // Start the node
-    node.run().await;
-
-    // Todo: refactor Node trait Node::run to return error messages.
-    Ok(())
+    run(node).await
 }

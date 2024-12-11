@@ -1,7 +1,7 @@
 use color_eyre::eyre::eyre;
 use malachite_cli::args::{Args, Commands};
 use malachite_cli::{logging, runtime};
-use malachite_starknet_host::node::StarknetNode;
+use malachite_starknet_host::node::{run, StarknetNode};
 use tracing::{error, info, trace};
 
 // Use jemalloc on Linux
@@ -74,7 +74,7 @@ pub fn main() -> color_eyre::Result<()> {
             };
 
             let rt = runtime::build_runtime(runtime)?;
-            rt.block_on(cmd.run(node, metrics))
+            rt.block_on(cmd.run(node, run, metrics))
                 .map_err(|error| eyre!("Failed to run start command {:?}", error))
         }
         Commands::Init(cmd) => cmd

@@ -1,8 +1,7 @@
-use std::path::{Path, PathBuf};
-
 use libp2p_identity::ecdsa;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use tracing::{info, Instrument};
 
 use malachite_actors::util::events::TxEvent;
@@ -150,6 +149,56 @@ impl Node for StarknetNode {
 
         handle.await.unwrap();
     }
+}
+
+pub async fn run(node: &StarknetNode) -> Result<(), Box<dyn core::error::Error>> {
+    let span = tracing::error_span!("node", moniker = %node.config.moniker);
+    let _enter = span.enter();
+
+    let priv_key_file = node.load_private_key_file(node.private_key_file.clone());
+    let priv_key_file = match priv_key_file {
+        Ok(p) => p,
+        Err(e) => return Err(e.into()),
+    };
+
+    let private_key = node.load_private_key(priv_key_file);
+
+    let genesis = node.load_genesis(node.genesis_file.clone());
+    let genesis = match genesis {
+        Ok(g) => g,
+        Err(e) => return Err(e.into()),
+    };
+
+    let start_height = node.start_height.map(|height| Height::new(height, 1));
+
+    let (actor, handle) = spawn_node_actor(
+        node.config.clone(),
+        node.home_dir.clone(),
+        genesis.validator_set,
+        private_key,
+        start_height,
+        TxEvent::new(),
+        span.clone(),
+    )
+    .await;
+
+    tokio::spawn({
+        let actor = actor.clone();
+        {
+            async move {
+                tokio::signal::ctrl_c().await.unwrap();
+                info!("Shutting down...");
+                actor.stop(None);
+            }
+        }
+        .instrument(span.clone())
+    });
+
+    let join = handle.await;
+    if let Err(e) = join {
+        return Err(e.into());
+    }
+    Ok(())
 }
 
 #[test]
