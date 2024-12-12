@@ -71,6 +71,10 @@ where
         self.driver.address()
     }
 
+    pub fn validator_set(&self) -> &Ctx::ValidatorSet {
+        self.driver.validator_set()
+    }
+
     pub fn get_proposer(&self, height: Ctx::Height, round: Round) -> &Ctx::Address {
         self.ctx
             .select_proposer(self.driver.validator_set(), height, round)
