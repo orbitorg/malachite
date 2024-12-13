@@ -1,4 +1,4 @@
-use malachite_common::{Extension, NilOrVal, Round, SignedExtension, VoteType};
+use malachite_core_types::{Extension, NilOrVal, Round, SignedExtension, VoteType};
 use std::fmt;
 
 use crate::context::address::BasePeerAddress;
@@ -34,7 +34,7 @@ impl fmt::Display for BaseVote {
     }
 }
 
-impl malachite_common::Vote<BaseContext> for BaseVote {
+impl malachite_core_types::Vote<BaseContext> for BaseVote {
     fn height(&self) -> BaseHeight {
         self.height
     }

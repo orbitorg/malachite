@@ -1,6 +1,6 @@
 use std::fmt;
 
-use malachite_common::{Address, Context};
+use malachite_core_types::{Address, Context};
 
 use crate::context::BaseContext;
 

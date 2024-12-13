@@ -8,10 +8,10 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-malachite-common    = { workspace = true }
-malachite-consensus = { workspace = true }
-malachite-test      = { workspace = true }
-malachite-metrics   = { workspace = true }
+malachite-core-types    = { workspace = true }
+malachite-consensus     = { workspace = true }
+malachite-test          = { workspace = true }
+malachite-metrics       = { workspace = true }
 
 rand = "0.8.5"
 signature = "2.2.0"

@@ -1,7 +1,7 @@
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
-use malachite_common::{
+use malachite_core_types::{
     Context, NilOrVal, PublicKey, Round, Signature, SignedMessage, SignedProposal, ValueId,
     VoteType,
 };

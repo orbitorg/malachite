@@ -8,7 +8,7 @@ pub struct BaseValue(pub u64);
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Ord, PartialOrd)]
 pub struct BaseValueId(u64);
 
-impl malachite_common::Value for BaseValue {
+impl malachite_core_types::Value for BaseValue {
     type Id = BaseValueId;
 
     fn id(&self) -> Self::Id {

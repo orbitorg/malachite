@@ -1,6 +1,6 @@
 use core::fmt;
 
-use malachite_common::Height;
+use malachite_core_types::Height;
 
 /// Base implementation of a Height
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

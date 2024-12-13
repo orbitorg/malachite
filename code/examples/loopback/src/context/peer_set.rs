@@ -7,7 +7,7 @@ use crate::context::address::BasePeerAddress;
 use crate::context::peer::BasePeer;
 use crate::context::BaseContext;
 
-use malachite_common::{ValidatorSet, VotingPower};
+use malachite_core_types::{ValidatorSet, VotingPower};
 use malachite_test::PublicKey;
 
 /// A minimal type capturing a set of peers.

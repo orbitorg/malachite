@@ -1,13 +1,13 @@
 use std::sync::mpsc::Sender;
 use tracing::{debug, info, span, trace, Level};
 
-use malachite_common::{
-    CommitCertificate, Height, Round, SignedMessage, Timeout, TimeoutStep, Validator, Validity,
-    ValueOrigin,
-};
 use malachite_consensus::{
     ConsensusMsg, Effect, Error, Input, Params, ProposedValue, Resume, SignedConsensusMsg, State,
     ValueToPropose,
+};
+use malachite_core_types::{
+    CommitCertificate, Height, Round, SignedMessage, Timeout, TimeoutKind, Validator, Validity,
+    ValueOrigin,
 };
 use malachite_metrics::Metrics;
 
@@ -28,11 +28,14 @@ pub struct Envelope {
 
 /// An application is stateless and deterministic.
 ///
-/// It only contains (1) a reference to a [`Sender`], which it uses
+/// It represents the application logic (or state machine) executing
+/// at a specific peer.
+///
+/// It contains (1) a reference to a [`Sender`], which it uses
 /// to transmit [`Input`]s to itself and other application instances
 /// running at other peers; and (2) a reference to a [`Sender`] to
 /// communicate to the outside environment (the system) each
-/// [`Decision`] this application took.
+/// [`Decision`] this local application took.
 ///
 /// The application is a wrapper over the malachite consensus state
 /// machine. It calls `malachite::process!` and handles
@@ -81,13 +84,13 @@ impl Application {
     }
 
     fn handle_schedule_timeout(&self, t: Timeout) -> Result<Resume<BaseContext>, String> {
-        let Timeout { round: _, step } = t;
+        let Timeout { round: _, kind } = t;
 
         // Special case to handle.
-        // If it's a timeout for commit step, then handle this timeout
-        // instantly: Signal to self that the timeout has elapsed.
+        // If it's a timeout for kind Commit, then handle this timeout instantly.
+        // Signal to self that the timeout has elapsed.
         // This will prompt consensus to provide the effect `Decide` afterward.
-        if step == TimeoutStep::Commit {
+        if kind == TimeoutKind::Commit {
             debug!("triggering TimeoutElapsed for Commit");
 
             self.network_tx
@@ -292,6 +295,18 @@ impl Application {
             Effect::PersistTimeout(_) => {
                 // No support for crash-recovery
                 Ok(Resume::Continue)
+            }
+            Effect::SignVote(_) => {
+                panic!("unimplemented arm Effect::SignVote in match effect")
+            }
+            Effect::SignProposal(_) => {
+                panic!("unimplemented arm Effect::SignProposal in match effect")
+            }
+            Effect::GetVoteSet(_, _) => {
+                panic!("unimplemented arm Effect::GetVoteSet in match effect")
+            }
+            Effect::SendVoteSetResponse(_, _, _, _) => {
+                panic!("unimplemented arm Effect::SendVoteSetResponse in match effect")
             }
         }
     }

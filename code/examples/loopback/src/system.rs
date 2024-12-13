@@ -21,7 +21,7 @@ pub const STEP_DELAY: Duration = Duration::from_millis(200);
 
 /// A system represents:
 ///
-/// - The state of all peers, namely params, metrics, networking inboxes.
+/// - The state of all peers, namely params, metrics, application logic.
 /// - The environment for executing the loopback application and producing decisions.
 ///
 /// Upon triggering `run`, the system will:

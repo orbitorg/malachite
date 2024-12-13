@@ -1,6 +1,6 @@
 use std::fmt;
 
-use malachite_common::Round;
+use malachite_core_types::Round;
 
 use crate::context::address::BasePeerAddress;
 use crate::context::height::BaseHeight;
@@ -38,7 +38,7 @@ impl fmt::Display for BaseProposal {
     }
 }
 
-impl malachite_common::Proposal<BaseContext> for BaseProposal {
+impl malachite_core_types::Proposal<BaseContext> for BaseProposal {
     fn height(&self) -> BaseHeight {
         self.height
     }
@@ -84,7 +84,7 @@ impl BaseProposalPart {
     }
 }
 
-impl malachite_common::ProposalPart<BaseContext> for BaseProposalPart {
+impl malachite_core_types::ProposalPart<BaseContext> for BaseProposalPart {
     fn is_first(&self) -> bool {
         true
     }

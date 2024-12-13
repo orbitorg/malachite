@@ -3,7 +3,7 @@ use std::fmt;
 use crate::context::address::BasePeerAddress;
 use crate::context::BaseContext;
 
-use malachite_common::{PublicKey, Validator, VotingPower};
+use malachite_core_types::{PublicKey, Validator, VotingPower};
 
 /// This is the voting power of each peer.
 pub const BASE_VOTING_POWER: u64 = 1;
