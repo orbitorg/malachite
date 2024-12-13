@@ -1,12 +1,12 @@
 // The loopback example demonstrates the simplest way to instantiate
 // the Malachite library.
 //
-// We will use a purely local instance of Malakite. The approach is to
+// We will use a purely local instance of Malachite. The approach is to
 // simulate everything, the network, signing, mempool, etc.
 // Each peer is a simple data structure. Messages passing via direct
 // function calls.
 //
-// The experience of building a system on top of Malakite in this example
+// The experience of building a system on top of Malachite in this example
 // should be no different from building on top of an SQLite instance.
 
 use std::process::exit;

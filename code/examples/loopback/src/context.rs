@@ -32,8 +32,8 @@ pub struct BaseContext {
 impl BaseContext {
     pub fn new() -> BaseContext {
         // The context is shared across all peers
-        // This is unusual, because each peer would normally have its own
-        // private/public key pair, but our application is unusual in this way
+        // In a real app, each peer would normally have its own
+        // key pair, but our application is unusual in this way.
         let mut rng = StdRng::seed_from_u64(0x42);
         let sk = PrivateKey::generate(&mut rng);
 

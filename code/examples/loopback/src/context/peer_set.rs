@@ -19,7 +19,7 @@ pub struct BasePeerSet {
 
 impl BasePeerSet {
     /// Create a new set of peers of cardinality `size`.
-    /// An assumption allowing us to simplify: All peers have the same public key.
+    /// An assumption allowing us to simplify: All peers have the _same_ public key.
     pub fn new(size: u32, pub_key: PublicKey) -> Self {
         let mut peers = vec![];
 

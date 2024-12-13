@@ -56,7 +56,7 @@ impl System {
         // Construct the simulated network
         let (ntx, nrx) = mpsc::channel();
 
-        // Channel on which send/receive the decisions
+        // Channel on which to send/receive the decisions
         let (dtx, drx) = mpsc::channel();
 
         let mut states = vec![];
@@ -175,10 +175,19 @@ impl System {
         let metrics = self.metrics.get(&peer_addr).unwrap().clone();
         let application = self.apps.get(&peer_addr).unwrap();
 
+        let context = peer_state.ctx.clone();
+
         trace!(source = %envelope.source, destination = %envelope.destination, "applying an input from an envelope");
 
-        self.apply_step_with_envelope(application, envelope.payload, &params, &metrics, peer_state)
-            .expect("unknown error during process_peer");
+        self.apply_step_with_envelope(
+            application,
+            envelope.payload,
+            &params,
+            &metrics,
+            peer_state,
+            &context,
+        )
+        .expect("unknown error during process_peer");
     }
 
     fn apply_step_with_envelope(
@@ -188,7 +197,8 @@ impl System {
         peer_params: &Params<BaseContext>,
         metrics: &Metrics,
         peer_state: &mut State<BaseContext>,
+        context: &BaseContext,
     ) -> Result<(), Error<BaseContext>> {
-        application.apply_input(input, peer_params, metrics, peer_state)
+        application.apply_input(input, peer_params, metrics, peer_state, context)
     }
 }

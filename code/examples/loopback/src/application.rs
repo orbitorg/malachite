@@ -6,8 +6,8 @@ use malachite_consensus::{
     ValueToPropose,
 };
 use malachite_core_types::{
-    CommitCertificate, Height, Round, SignedMessage, Timeout, TimeoutKind, Validator, Validity,
-    ValueOrigin,
+    CommitCertificate, Context, Height, Round, SignedMessage, Timeout, TimeoutKind, Validator,
+    Validity, ValueOrigin,
 };
 use malachite_metrics::Metrics;
 
@@ -26,9 +26,7 @@ pub struct Envelope {
     pub payload: Input<BaseContext>,
 }
 
-/// An application is stateless and deterministic.
-///
-/// It represents the application logic (or state machine) executing
+/// An application is the deterministic state machine executing
 /// at a specific peer.
 ///
 /// It contains (1) a reference to a [`Sender`], which it uses
@@ -73,13 +71,14 @@ impl Application {
         peer_params: &Params<BaseContext>,
         metrics: &Metrics,
         peer_state: &mut State<BaseContext>,
+        ctx: &BaseContext,
     ) -> Result<(), Error<BaseContext>> {
         malachite_consensus::process!(
             input: input,
             state: peer_state,
             metrics: metrics,
             with: effect =>
-                self.handle_effect(peer_params, effect)
+                self.handle_effect(peer_params, effect, ctx)
         )
     }
 
@@ -136,7 +135,7 @@ impl Application {
                         })
                         .unwrap();
 
-                    // Todo: This was not intuitive to find - source of bug/confusion
+                    // Todo: This was not intuitive to find - source of confusion
                     self.network_tx
                         .send(Envelope {
                             source: self.peer_id,
@@ -190,11 +189,11 @@ impl Application {
         Ok(Resume::Continue)
     }
 
+    // Control passes from consensus to the application here.
+    // The app creates a value and provides it as input to Malachite
+    // in the form of a `ValueToPropose` variant.
+    // Register this input in the inbox of the current validator.
     fn handle_get_value(&self, h: BaseHeight, r: Round) -> Result<Resume<BaseContext>, String> {
-        // Control passes to the application here.
-        // The app creates a value and provides it as input to Malachite
-        // in the form of a `ProposeValue` variant.
-        // Register this input in the inbox of the current validator.
         let value = 786 + h.0;
         let input_value = ValueToPropose {
             height: h,
@@ -218,6 +217,7 @@ impl Application {
         &self,
         peer_params: &Params<BaseContext>,
         effect: Effect<BaseContext>,
+        context: &BaseContext,
     ) -> Result<Resume<BaseContext>, String> {
         assert_eq!(peer_params.address, self.peer_id);
 
@@ -296,11 +296,13 @@ impl Application {
                 // No support for crash-recovery
                 Ok(Resume::Continue)
             }
-            Effect::SignVote(_) => {
-                panic!("unimplemented arm Effect::SignVote in match effect")
+            Effect::SignVote(v) => {
+                let sv = context.sign_vote(v);
+                Ok(Resume::SignedVote(sv))
             }
-            Effect::SignProposal(_) => {
-                panic!("unimplemented arm Effect::SignProposal in match effect")
+            Effect::SignProposal(p) => {
+                let sp = context.sign_proposal(p);
+                Ok(Resume::SignedProposal(sp))
             }
             Effect::GetVoteSet(_, _) => {
                 panic!("unimplemented arm Effect::GetVoteSet in match effect")
