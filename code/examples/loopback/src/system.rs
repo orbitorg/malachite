@@ -1,9 +1,10 @@
+use crossbeam_channel as cbc;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::sync::mpsc::Receiver;
 use std::thread;
-use std::time::Duration;
-use tracing::{debug, error, info, span, trace, Level};
+use std::time::{Duration, Instant};
+use tracing::{debug, error, info, span, trace, warn, Level};
 
 use malachite_consensus::{Error, Input, Params, State, ValuePayload};
 use malachite_metrics::Metrics;
@@ -13,6 +14,7 @@ use crate::common;
 use crate::context::address::BasePeerAddress;
 use crate::context::height::BaseHeight;
 use crate::context::peer_set::BasePeerSet;
+use crate::context::value::BaseValue;
 use crate::context::BaseContext;
 use crate::decision::Decision;
 
@@ -49,12 +51,24 @@ impl System {
     /// Each peer is a validator in the system.
     ///
     /// Assumes the size of the system is >= 4 and < 10.
-    pub fn new(size: u32) -> (System, Vec<State<BaseContext>>, Receiver<Decision>) {
+    pub fn new(
+        size: u32,
+    ) -> (
+        System,
+        Vec<State<BaseContext>>,
+        cbc::Sender<BaseValue>, // Proposals (input to the system)
+        Receiver<Decision>,     // Decisions (output of the system)
+    ) {
         assert!(size >= 4);
         assert!(size < 10);
 
         // Construct the simulated network
         let (ntx, nrx) = mpsc::channel();
+
+        // Crossbeam channel on which `BaseValue` proposals pass from the environment into
+        // application logic.
+        // This is the mempool would be in a real application.
+        let (ps, pr) = cbc::bounded(5);
 
         // Channel on which to send/receive the decisions
         let (dtx, drx) = mpsc::channel();
@@ -95,6 +109,7 @@ impl System {
                     peer_id: peer_addr,
                     network_tx: ntx.clone(),
                     decision_tx: dtx.clone(),
+                    proposal_rx: pr.clone(),
                 },
             );
         }
@@ -107,6 +122,7 @@ impl System {
                 network_rx: nrx,
             },
             states,
+            ps,
             drx,
         )
     }
@@ -123,6 +139,26 @@ impl System {
 
             // Simulate network and execution delays
             thread::sleep(STEP_DELAY);
+        }
+    }
+
+    // Run for a limited amount of time
+    #[cfg(test)]
+    pub fn run_timed(&mut self, states: &mut Vec<State<BaseContext>>, timeout: Duration) {
+        self.initialize_system(states);
+        let start = Instant::now();
+
+        // Busy loop to orchestrate among peers
+        loop {
+            // Pick the next envelope from the network and demultiplex it
+            self.step(states);
+
+            let duration = Instant::now().duration_since(start);
+            if duration >= timeout {
+                return
+            }
+
+            warn!(time = ?duration, "elapsed");
         }
     }
 
@@ -200,5 +236,28 @@ impl System {
         context: &BaseContext,
     ) -> Result<(), Error<BaseContext>> {
         application.apply_input(input, peer_params, metrics, peer_state, context)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+    use crate::context::value::BaseValue;
+    use crate::system::System;
+
+    #[test]
+    fn basic_proposal_decisions() {
+        let value = BaseValue(45);
+
+        let (mut n, mut states, proposals, decisions) = System::new(4);
+
+        proposals
+            .send(value)
+            .expect("could not send value to be proposed");
+
+        n.run_timed(&mut states, Duration::from_secs(1));
+
+        let d = decisions.recv().unwrap().value_id.0;
+        assert_eq!(d, value.0);
     }
 }

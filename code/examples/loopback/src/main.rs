@@ -9,15 +9,16 @@
 // The experience of building a system on top of Malachite in this example
 // should be no different from building on top of an SQLite instance.
 
+use crate::context::value::BaseValue;
+use crate::decision::Decision;
+use crate::system::System;
+use crossbeam_channel::Sender;
 use std::process::exit;
 use std::sync::mpsc::Receiver;
 use std::thread;
 use tracing::level_filters::LevelFilter;
 use tracing::{error, warn};
 use tracing_subscriber::EnvFilter;
-
-use crate::decision::Decision;
-use crate::system::System;
 
 mod application;
 mod common;
@@ -30,13 +31,13 @@ fn main() {
     init();
 
     // Create a network of 4 peers
-    let (mut n, mut states, rx) = System::new(4);
+    let (mut n, mut states, proposals, decisions) = System::new(4);
+
+    // Spawn a thread that produces values to be proposed
+    produce_proposals_background(proposals);
 
     // Spawn a thread in the background that handles decided values
-    handle_decisions_background(rx);
-
-    // Produce values to agreed-upon here using multi-proposer model
-    // produce_
+    consume_decisions_background(decisions);
 
     // Blocking method, starts the network and handles orchestration of
     // block building
@@ -45,7 +46,19 @@ fn main() {
     // Todo: Clean stop
 }
 
-fn handle_decisions_background(rx: Receiver<Decision>) {
+fn produce_proposals_background(proposals: Sender<BaseValue>) {
+    let mut counter = 45;
+    thread::spawn(move || loop {
+        proposals
+            .send(BaseValue(counter))
+            .expect("could not send new value to be proposed");
+        warn!(value = %counter, "IN -> new value to be proposed");
+
+        counter += 1;
+    });
+}
+
+fn consume_decisions_background(rx: Receiver<Decision>) {
     thread::spawn(move || {
         // Busy loop, simply consume the decided heights
         loop {
@@ -56,7 +69,7 @@ fn handle_decisions_background(rx: Receiver<Decision>) {
                         peer = %d.peer.to_string(),
                         value = %d.value_id.to_string(),
                         height = %d.height,
-                        "new decision took place",
+                        "OUT <- new decision took place",
                     );
                 }
                 Err(err) => {

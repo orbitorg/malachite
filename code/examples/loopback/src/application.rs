@@ -1,4 +1,6 @@
+use crossbeam_channel as cbc;
 use std::sync::mpsc::Sender;
+use crossbeam_channel::TryRecvError;
 use tracing::{debug, info, span, trace, Level};
 
 use malachite_consensus::{
@@ -29,11 +31,17 @@ pub struct Envelope {
 /// An application is the deterministic state machine executing
 /// at a specific peer.
 ///
-/// It contains (1) a reference to a [`Sender`], which it uses
+/// It contains:
+/// (1) a reference to a [`Sender`], which it uses
 /// to transmit [`Input`]s to itself and other application instances
-/// running at other peers; and (2) a reference to a [`Sender`] to
+/// running at other peers.
+///
+/// (2) a reference to a [`Sender`] to
 /// communicate to the outside environment (the system) each
 /// [`Decision`] this local application took.
+///
+/// (3) reference to a [`Receiver`] that provides to the app
+/// the values to propose in each new height.
 ///
 /// The application is a wrapper over the malachite consensus state
 /// machine. It calls `malachite::process!` and handles
@@ -46,6 +54,9 @@ pub struct Application {
 
     // Send [`Decision`]s to the environment, i.e., the [`System`].
     pub decision_tx: Sender<Decision>,
+
+    // Consume the possible values that will be proposed
+    pub proposal_rx: cbc::Receiver<BaseValue>,
 }
 
 impl Application {
@@ -193,13 +204,18 @@ impl Application {
     // The app creates a value and provides it as input to Malachite
     // in the form of a `ValueToPropose` variant.
     // Register this input in the inbox of the current validator.
+    // If no value is available, the application blocks waiting.
     fn handle_get_value(&self, h: BaseHeight, r: Round) -> Result<Resume<BaseContext>, String> {
-        let value = 786 + h.0;
+        let value = self
+            .proposal_rx
+            .try_recv()
+            .or_else(|_| Err("no value"))?;
+
         let input_value = ValueToPropose {
             height: h,
             round: r,
             valid_round: Round::Nil,
-            value: BaseValue(value),
+            value,
             extension: None,
         };
         self.network_tx
@@ -305,9 +321,13 @@ impl Application {
                 Ok(Resume::SignedProposal(sp))
             }
             Effect::GetVoteSet(_, _) => {
+                // Not needed
+                // The app will never go into round > 0
                 panic!("unimplemented arm Effect::GetVoteSet in match effect")
             }
             Effect::SendVoteSetResponse(_, _, _, _) => {
+                // Not needed
+                // The app will never go into round > 0
                 panic!("unimplemented arm Effect::SendVoteSetResponse in match effect")
             }
         }
