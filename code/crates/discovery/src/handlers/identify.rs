@@ -1,5 +1,5 @@
 use libp2p::{identify, swarm::ConnectionId, PeerId, Swarm};
-use tracing::{info, warn};
+use tracing::{debug, info};
 
 use crate::config::BootstrapProtocol;
 use crate::{request::RequestData, Discovery, DiscoveryClient, OutboundConnection, State};
@@ -62,7 +62,7 @@ where
         }
 
         if let Some(connection_ids) = self.active_connections.get_mut(&peer_id) {
-            warn!(
+            debug!(
                 "Additional connection {connection_id} to peer {peer_id}, total connections: {}",
                 connection_ids.len() + 1
             );

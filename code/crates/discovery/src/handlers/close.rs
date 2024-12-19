@@ -1,5 +1,5 @@
 use libp2p::{swarm::ConnectionId, PeerId, Swarm};
-use tracing::{error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{Discovery, DiscoveryClient, State};
 
@@ -39,10 +39,10 @@ where
             if swarm.close_connection(connection_id) {
                 info!("Closing connection {connection_id} to peer {peer_id}");
             } else {
-                error!("Error closing connection {connection_id} to peer {peer_id}");
+                warn!("Error closing connection {connection_id} to peer {peer_id}");
             }
         } else {
-            warn!("Tried to close an unknown connection {connection_id} to peer {peer_id}");
+            debug!("Tried to close an unknown connection {connection_id} to peer {peer_id}");
         }
     }
 
@@ -54,13 +54,13 @@ where
     ) {
         if let Some(connections) = self.active_connections.get_mut(&peer_id) {
             if connections.contains(&connection_id) {
-                warn!("Removing active connection {connection_id} to peer {peer_id}");
+                debug!("Removing active connection {connection_id} to peer {peer_id}");
                 connections.retain(|id| id != &connection_id);
                 if connections.is_empty() {
                     self.active_connections.remove(&peer_id);
                 }
             } else {
-                warn!("Non-established connection {connection_id} to peer {peer_id} closed");
+                debug!("Non-established connection {connection_id} to peer {peer_id} closed");
             }
         }
 
@@ -74,7 +74,7 @@ where
                 out_conn.connection_id == Some(connection_id)
             })
         {
-            warn!("Outbound connection {connection_id} to peer {peer_id} closed");
+            debug!("Outbound connection {connection_id} to peer {peer_id} closed");
 
             self.outbound_connections.remove(&peer_id);
 
@@ -82,7 +82,7 @@ where
                 self.repair_outbound_connection(swarm);
             }
         } else if self.inbound_connections.get(&peer_id) == Some(&connection_id) {
-            warn!("Inbound connection {connection_id} to peer {peer_id} closed");
+            debug!("Inbound connection {connection_id} to peer {peer_id} closed");
 
             self.inbound_connections.remove(&peer_id);
         }
