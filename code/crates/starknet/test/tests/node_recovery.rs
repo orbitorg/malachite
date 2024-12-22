@@ -1,5 +1,5 @@
-use std::time::Duration;
 use informalsystems_malachitebft_starknet_test::{init_logging, TestBuilder};
+use std::time::Duration;
 
 #[tokio::test]
 async fn node_recovery_after_crash() {
